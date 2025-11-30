@@ -173,6 +173,7 @@ async def create_endpoint(endpoint: EndpointCreate, db: AsyncSession = Depends(g
     except HTTPException:
         raise
     except Exception as e:
+        logger.error(f"Failed to create endpoint: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create endpoint: {str(e)}"
