@@ -12,7 +12,7 @@ import {
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
-import shotService from '@/services/shotService';
+import { shotService } from '@/services/shotService';
 import CreateTaskDialog from '@/components/shots/CreateTaskDialog';
 import DataTable from '@/components/common/DataTable';
 import { TableColumn } from '@/types';

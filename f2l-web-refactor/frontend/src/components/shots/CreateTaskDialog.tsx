@@ -19,8 +19,8 @@ import {
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
-import endpointService from '@/services/endpointService';
-import shotService from '@/services/shotService';
+import { endpointService } from '@/services/endpointService';
+import { shotService } from '@/services/shotService';
 import { ROUTES } from '@/utils/constants';
 
 interface CreateTaskDialogProps {
