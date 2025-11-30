@@ -36,7 +36,7 @@ class LocalManager:
     def connect(self) -> bool:
         """
         Connect to local file system (validate base path).
-        
+
         Returns:
             True if base path is accessible, False otherwise
         """
@@ -44,24 +44,26 @@ class LocalManager:
             if not self.base_path.exists():
                 logger.error(f"Base path does not exist: {self.base_path}")
                 return False
-            
+
             if not self.base_path.is_dir():
                 logger.error(f"Base path is not a directory: {self.base_path}")
                 return False
-            
-            # Test read/write permissions
-            test_file = self.base_path / '.f2l_test'
+
+            # Test read permissions (write permissions not required for browsing)
             try:
-                test_file.write_text('test')
-                test_file.unlink()
-            except Exception as e:
-                logger.error(f"No write permissions for base path: {e}")
+                # Try to list the directory to verify read access
+                list(self.base_path.iterdir())
+            except PermissionError as e:
+                logger.error(f"No read permissions for base path: {e}")
                 return False
-            
+            except Exception as e:
+                logger.warning(f"Could not list base path (may be empty): {e}")
+                # Continue anyway - empty directories are valid
+
             self.connected = True
             logger.info(f"Connected to local file system: {self.base_path}")
             return True
-            
+
         except Exception as e:
             logger.error(f"Failed to connect to local file system: {e}")
             return False
