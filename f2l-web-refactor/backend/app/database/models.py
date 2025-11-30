@@ -98,7 +98,7 @@ class Endpoint(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
-    endpoint_type: Mapped[EndpointType] = mapped_column(Enum(EndpointType), nullable=False)
+    endpoint_type: Mapped[EndpointType] = mapped_column(Enum(EndpointType, values_callable=lambda x: [e.value for e in x]), nullable=False)
 
     # FTP/SFTP Fields
     host: Mapped[Optional[str]] = mapped_column(String(255))
