@@ -6,6 +6,7 @@ from typing import List, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field
 from datetime import datetime
+import logging
 
 from app.database.models import EndpointType
 from app.repositories.endpoint_repository import EndpointRepository
@@ -14,6 +15,7 @@ from app.database.session import get_db
 from sqlalchemy.ext.asyncio import AsyncSession
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 class EndpointBase(BaseModel):
@@ -142,12 +144,16 @@ async def create_endpoint(endpoint: EndpointCreate, db: AsyncSession = Depends(g
         # Pydantic may serialize enum as string name (FTP) instead of value (ftp)
         if 'endpoint_type' in endpoint_data:
             endpoint_type = endpoint_data['endpoint_type']
+            logger.info(f"Original endpoint_type: {endpoint_type}, type: {type(endpoint_type)}")
             if isinstance(endpoint_type, EndpointType):
                 # If it's an enum, get its value
                 endpoint_data['endpoint_type'] = endpoint_type.value
+                logger.info(f"Converted enum to value: {endpoint_data['endpoint_type']}")
             elif isinstance(endpoint_type, str):
                 # If it's already a string, convert to lowercase
                 endpoint_data['endpoint_type'] = endpoint_type.lower()
+                logger.info(f"Converted string to lowercase: {endpoint_data['endpoint_type']}")
+            logger.info(f"Final endpoint_type: {endpoint_data['endpoint_type']}")
 
         # Encrypt passwords if provided
         if endpoint_data.get('password'):
