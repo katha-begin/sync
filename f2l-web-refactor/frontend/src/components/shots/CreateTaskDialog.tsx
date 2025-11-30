@@ -55,11 +55,36 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
     ? endpointsData
     : (endpointsData?.items || []);
 
-  const { data: structure, isLoading: structureLoading } = useQuery({
+  const { data: structure, isLoading: structureLoading, refetch: refetchStructure } = useQuery({
     queryKey: ['shot-structure', selectedEndpoint],
     queryFn: () => shotService.getStructure(selectedEndpoint, []),
     enabled: !!selectedEndpoint && open,
   });
+
+  // Trigger scan if structure is empty or cache is invalid
+  useEffect(() => {
+    const triggerScanIfNeeded = async () => {
+      if (selectedEndpoint && structure && !structureLoading) {
+        // Check if structure is empty or cache is invalid
+        const isEmpty = structure.episodes.length === 0;
+        const cacheInvalid = structure.cache_valid === false;
+
+        if (isEmpty || cacheInvalid) {
+          try {
+            // Trigger scan
+            await shotService.scanStructure(selectedEndpoint, false);
+            // Refetch structure after scan
+            refetchStructure();
+          } catch (err) {
+            console.error('Failed to scan structure:', err);
+            setError('Failed to scan endpoint structure. Please try again.');
+          }
+        }
+      }
+    };
+
+    triggerScanIfNeeded();
+  }, [selectedEndpoint, structure, structureLoading, refetchStructure]);
 
   useEffect(() => {
     if (!open) {
