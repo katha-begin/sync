@@ -90,25 +90,27 @@ async def browse_directory_with_config(
     This allows browsing without saving the endpoint first.
     """
     from app.core.local_manager import LocalManager, LocalConfig
+    from app.core.ftp_manager import FTPConfig
+    from app.core.sftp_manager import SFTPConfig
 
     try:
         # Create appropriate manager based on endpoint type
         if config.endpoint_type.lower() == 'ftp':
-            manager = FTPManager(
+            ftp_config = FTPConfig(
                 host=config.host,
                 port=config.port or 21,
                 username=config.username,
-                password=config.password,
-                remote_path=config.remote_path or "/"
+                password=config.password
             )
+            manager = FTPManager(config=ftp_config)
         elif config.endpoint_type.lower() == 'sftp':
-            manager = SFTPManager(
+            sftp_config = SFTPConfig(
                 host=config.host,
                 port=config.port or 22,
                 username=config.username,
-                password=config.password,
-                remote_path=config.remote_path or "/"
+                password=config.password
             )
+            manager = SFTPManager(config=sftp_config)
         elif config.endpoint_type.lower() == 'local':
             # Always use /mnt as base_path (the mount point)
             # The 'path' parameter will be relative to /mnt

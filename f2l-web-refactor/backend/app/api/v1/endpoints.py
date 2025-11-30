@@ -260,23 +260,27 @@ async def test_endpoint_config(config: EndpointCreate):
 
         # Create appropriate manager based on endpoint type
         if config.endpoint_type == EndpointType.FTP:
-            manager = FTPManager(
+            from app.core.ftp_manager import FTPConfig
+            ftp_config = FTPConfig(
                 host=config.host,
                 port=config.port or 21,
                 username=config.username,
-                password=config.password,
-                remote_path=config.remote_path or "/"
+                password=config.password
             )
+            manager = FTPManager(config=ftp_config)
         elif config.endpoint_type == EndpointType.SFTP:
-            manager = SFTPManager(
+            from app.core.sftp_manager import SFTPConfig
+            sftp_config = SFTPConfig(
                 host=config.host,
                 port=config.port or 22,
                 username=config.username,
-                password=config.password,
-                remote_path=config.remote_path or "/"
+                password=config.password
             )
+            manager = SFTPManager(config=sftp_config)
         elif config.endpoint_type == EndpointType.LOCAL:
-            manager = LocalManager(local_path=config.local_path or "/")
+            from app.core.local_manager import LocalConfig
+            local_config = LocalConfig(base_path=config.local_path or "/")
+            manager = LocalManager(config=local_config)
         else:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
