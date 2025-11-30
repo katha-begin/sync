@@ -138,9 +138,16 @@ async def create_endpoint(endpoint: EndpointCreate, db: AsyncSession = Depends(g
         # Prepare endpoint data
         endpoint_data = endpoint.dict(exclude_unset=True)
 
-        # Convert endpoint_type enum to its value (lowercase string)
+        # Convert endpoint_type to lowercase string value for database
+        # Pydantic may serialize enum as string name (FTP) instead of value (ftp)
         if 'endpoint_type' in endpoint_data:
-            endpoint_data['endpoint_type'] = endpoint_data['endpoint_type'].value
+            endpoint_type = endpoint_data['endpoint_type']
+            if isinstance(endpoint_type, EndpointType):
+                # If it's an enum, get its value
+                endpoint_data['endpoint_type'] = endpoint_type.value
+            elif isinstance(endpoint_type, str):
+                # If it's already a string, convert to lowercase
+                endpoint_data['endpoint_type'] = endpoint_type.lower()
 
         # Encrypt passwords if provided
         if endpoint_data.get('password'):
