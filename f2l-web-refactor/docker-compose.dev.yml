@@ -1,0 +1,179 @@
+# Development Docker Compose - Separate Frontend and Backend
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: f2l-postgres-dev
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-f2l_sync_dev}
+      POSTGRES_USER: ${POSTGRES_USER:-f2luser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-devpassword}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-f2luser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - f2l-dev-network
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: f2l-redis-dev
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_dev_data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - f2l-dev-network
+
+  # Backend API Application (Development)
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-backend-dev
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f2luser}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-f2l_sync_dev}
+
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+
+      # Celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-jwt-secret-change-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-32-chars-long}
+
+      # Application
+      APP_ENV: development
+      LOG_LEVEL: DEBUG
+      WORKERS: 1
+
+      # CORS - Allow frontend development server
+      CORS_ORIGINS: "http://localhost:3000,http://localhost:5173,http://frontend:3000"
+
+    volumes:
+      # Development: Mount source code for hot reload
+      - ./backend/app:/app/app
+      - ./backend/alembic:/app/alembic
+      - ./backend/alembic.ini:/app/alembic.ini
+      
+      # Data volumes
+      - sync_dev_data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+
+    ports:
+      - "8001:8000"
+    restart: unless-stopped
+    networks:
+      - f2l-dev-network
+    # Development: Use uvicorn with reload
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+
+  # Frontend React Application (Development)
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile.dev
+    container_name: f2l-frontend-dev
+    environment:
+      - VITE_API_BASE_URL=http://localhost:8001
+      - VITE_WS_URL=http://localhost:8001
+      - VITE_DEV_MODE=true
+    volumes:
+      # Development: Mount source code for hot reload
+      - ./frontend/src:/app/src
+      - ./frontend/public:/app/public
+      - ./frontend/package.json:/app/package.json
+      - ./frontend/vite.config.ts:/app/vite.config.ts
+      - ./frontend/tsconfig.json:/app/tsconfig.json
+      - ./frontend/index.html:/app/index.html
+    ports:
+      - "3001:3000"
+    restart: unless-stopped
+    networks:
+      - f2l-dev-network
+
+  # Celery Worker (Development)
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-celery-worker-dev
+    command: celery -A app.tasks.celery_app worker --loglevel=debug --concurrency=2 --pool=prefork
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f2luser}:${POSTGRES_PASSWORD:-devpassword}@postgres:5432/${POSTGRES_DB:-f2l_sync_dev}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-key-change-in-production}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY:-dev-encryption-key-32-chars-long}
+      LOG_LEVEL: DEBUG
+    volumes:
+      - ./backend/app:/app/app
+      - sync_dev_data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+    restart: unless-stopped
+    networks:
+      - f2l-dev-network
+
+  # Flower (Celery Monitoring) - Development
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-flower-dev
+    command: celery -A app.tasks.celery_app flower --port=5555 --basic_auth=admin:admin
+    depends_on:
+      - redis
+      - celery-worker
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+    ports:
+      - "5556:5555"
+    restart: unless-stopped
+    networks:
+      - f2l-dev-network
+
+volumes:
+  postgres_dev_data:
+    driver: local
+  redis_dev_data:
+    driver: local
+  sync_dev_data:
+    driver: local
+
+networks:
+  f2l-dev-network:
+    driver: bridge

@@ -1,0 +1,217 @@
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: f2l-postgres
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-f2l_sync}
+      POSTGRES_USER: ${POSTGRES_USER:-f2luser}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_INITDB_ARGS: "-E UTF8"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-f2luser}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Redis Cache & Queue
+  redis:
+    image: redis:7-alpine
+    container_name: f2l-redis
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    ports:
+      - "${REDIS_PORT:-6379}:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Backend API Application
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      # Database
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f2luser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-f2l_sync}
+
+      # Redis
+      REDIS_URL: redis://redis:6379/0
+
+      # Celery
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+
+      # Security
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+
+      # Application
+      APP_ENV: ${APP_ENV:-production}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      WORKERS: ${WORKERS:-4}
+
+      # CORS
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost,http://localhost:3000,http://frontend:3000}
+
+    volumes:
+      # Sync data
+      - sync_data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+
+      # Mount server /mnt/ directory for local sync browsing and operations
+      - /mnt:/mnt
+
+    ports:
+      - "${API_PORT:-8001}:8000"
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Frontend React Application
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-http://localhost:8001}
+    container_name: f2l-frontend
+    environment:
+      - VITE_API_BASE_URL=${VITE_API_BASE_URL:-http://localhost:8001}
+    ports:
+      - "${FRONTEND_PORT:-3001}:3000"
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Celery Worker
+  celery-worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-celery-worker
+    command: celery -A app.tasks.celery_app worker --loglevel=info --concurrency=4 --pool=prefork --queues=celery,sync,health,maintenance
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f2luser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-f2l_sync}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      - sync_data:/app/data
+      - ./logs:/app/logs
+      - ./cache:/app/cache
+
+      # Mount server /mnt/ directory for local sync operations
+      - /mnt:/mnt
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Celery Beat (Scheduler)
+  celery-beat:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-celery-beat
+    command: celery -A app.tasks.celery_app beat --loglevel=info
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f2luser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-f2l_sync}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Flower (Celery Monitoring)
+  flower:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: f2l-flower
+    command: celery -A app.tasks.celery_app flower --port=5555 --basic_auth=${FLOWER_USER:-admin}:${FLOWER_PASSWORD:-admin}
+    depends_on:
+      - redis
+      - celery-worker
+    environment:
+      CELERY_BROKER_URL: redis://redis:6379/0
+      CELERY_RESULT_BACKEND: redis://redis:6379/1
+      DATABASE_URL: postgresql://${POSTGRES_USER:-f2luser}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-f2l_sync}
+      SECRET_KEY: ${SECRET_KEY}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    ports:
+      - "${FLOWER_PORT:-5556}:5555"
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: f2l-nginx
+    depends_on:
+      - backend
+      - frontend
+    volumes:
+      # Use dev config (no cache) for development, prod config (30min cache) for production
+      - ./nginx/nginx.dev.conf:/etc/nginx/nginx.conf:ro
+      - ./nginx/ssl:/etc/nginx/ssl:ro  # SSL certificates (optional)
+    ports:
+      - "${HTTP_PORT:-8080}:80"
+      - "${HTTPS_PORT:-8443}:443"
+    restart: unless-stopped
+    networks:
+      - f2l-network
+
+volumes:
+  postgres_data:
+    driver: local
+  redis_data:
+    driver: local
+  sync_data:
+    driver: local
+
+networks:
+  f2l-network:
+    driver: bridge
