@@ -399,12 +399,12 @@ class ShotStructureScanner:
         loop = asyncio.get_event_loop()
 
         try:
-            # Use list_directory method which returns a dict with 'items' key
-            result = await loop.run_in_executor(None, ftp_manager.list_directory, path, False)
-            items = result.get("items", [])
+            # list_directory returns List[FTPFileInfo]
+            file_infos = await loop.run_in_executor(None, ftp_manager.list_directory, path, False)
             directories = [
-                item["name"] for item in items
-                if not item.get("is_file", True) and re.match(pattern, item["name"])
+                file_info.path.split('/')[-1]  # Get just the name from the path
+                for file_info in file_infos
+                if not file_info.is_file and re.match(pattern, file_info.path.split('/')[-1])
             ]
             return sorted(directories)
         except Exception as e:
