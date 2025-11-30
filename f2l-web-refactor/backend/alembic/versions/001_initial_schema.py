@@ -18,14 +18,14 @@ depends_on = None
 
 def upgrade() -> None:
     # Create enum types
-    op.execute("CREATE TYPE endpointtype AS ENUM ('ftp', 'sftp', 's3', 'local')")
-    op.execute("CREATE TYPE syncdirection AS ENUM ('source_to_dest', 'dest_to_source', 'bidirectional')")
-    op.execute("CREATE TYPE foldermatchmode AS ENUM ('exact', 'contains', 'startswith')")
-    op.execute("CREATE TYPE executionstatus AS ENUM ('queued', 'running', 'completed', 'failed', 'cancelled')")
-    op.execute("CREATE TYPE operationtype AS ENUM ('upload', 'download', 'delete', 'skip')")
-    op.execute("CREATE TYPE operationstatus AS ENUM ('pending', 'in_progress', 'completed', 'failed', 'skipped')")
-    op.execute("CREATE TYPE loglevel AS ENUM ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')")
-    op.execute("CREATE TYPE scheduleunit AS ENUM ('minutes', 'hours', 'days')")
+    op.execute("CREATE TYPE IF NOT EXISTS endpointtype AS ENUM ('ftp', 'sftp', 's3', 'local')")
+    op.execute("CREATE TYPE IF NOT EXISTS syncdirection AS ENUM ('source_to_dest', 'dest_to_source', 'bidirectional')")
+    op.execute("CREATE TYPE IF NOT EXISTS foldermatchmode AS ENUM ('exact', 'contains', 'startswith')")
+    op.execute("CREATE TYPE IF NOT EXISTS executionstatus AS ENUM ('queued', 'running', 'completed', 'failed', 'cancelled')")
+    op.execute("CREATE TYPE IF NOT EXISTS operationtype AS ENUM ('upload', 'download', 'delete', 'skip')")
+    op.execute("CREATE TYPE IF NOT EXISTS operationstatus AS ENUM ('pending', 'in_progress', 'completed', 'failed', 'skipped')")
+    op.execute("CREATE TYPE IF NOT EXISTS loglevel AS ENUM ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')")
+    op.execute("CREATE TYPE IF NOT EXISTS scheduleunit AS ENUM ('minutes', 'hours', 'days')")
 
     # Create endpoints table
     op.create_table('endpoints',
