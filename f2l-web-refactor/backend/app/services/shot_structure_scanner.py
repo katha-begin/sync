@@ -399,10 +399,12 @@ class ShotStructureScanner:
         loop = asyncio.get_event_loop()
 
         try:
-            files = await loop.run_in_executor(None, ftp_manager.list_files, path, False)
+            # Use list_directory method which returns a dict with 'items' key
+            result = await loop.run_in_executor(None, ftp_manager.list_directory, path, False)
+            items = result.get("items", [])
             directories = [
-                f["name"] for f in files
-                if not f.get("is_file", True) and re.match(pattern, f["name"])
+                item["name"] for item in items
+                if not item.get("is_file", True) and re.match(pattern, item["name"])
             ]
             return sorted(directories)
         except Exception as e:
@@ -438,7 +440,7 @@ class ShotStructureScanner:
         loop = asyncio.get_event_loop()
 
         try:
-            await loop.run_in_executor(None, ftp_manager.list_files, path, False)
+            await loop.run_in_executor(None, ftp_manager.list_directory, path, False)
             return True
         except:
             return False
