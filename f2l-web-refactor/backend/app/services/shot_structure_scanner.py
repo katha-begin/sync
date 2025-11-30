@@ -23,6 +23,7 @@ from app.database.models import (
 from app.core.ftp_manager import FTPManager, FTPConfig
 from app.core.local_manager import LocalManager, LocalConfig
 from app.utils.shot_path_utils import ShotPathUtils
+from app.core.encryption import decrypt_password
 
 logger = logging.getLogger(__name__)
 
@@ -267,10 +268,13 @@ class ShotStructureScanner:
         logger.info(f"Scanning FTP structure at {endpoint.host}:{endpoint.remote_path}")
 
         # Create FTP manager
+        # Decrypt password before passing to FTP manager
+        decrypted_password = decrypt_password(endpoint.password_encrypted) if endpoint.password_encrypted else ""
+
         ftp_config = FTPConfig(
             host=endpoint.host,
             username=endpoint.username,
-            password=endpoint.password_encrypted,  # TODO: Decrypt password
+            password=decrypted_password,
             port=endpoint.port or 21
         )
         ftp_manager = FTPManager(ftp_config)
