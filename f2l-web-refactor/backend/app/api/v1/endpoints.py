@@ -138,6 +138,10 @@ async def create_endpoint(endpoint: EndpointCreate, db: AsyncSession = Depends(g
         # Prepare endpoint data
         endpoint_data = endpoint.dict(exclude_unset=True)
 
+        # Convert endpoint_type enum to its value (lowercase string)
+        if 'endpoint_type' in endpoint_data:
+            endpoint_data['endpoint_type'] = endpoint_data['endpoint_type'].value
+
         # Encrypt passwords if provided
         if endpoint_data.get('password'):
             endpoint_data['password_encrypted'] = encrypt_password(endpoint_data.pop('password'))
