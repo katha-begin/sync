@@ -50,7 +50,10 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
     enabled: open,
   });
 
-  const endpoints = endpointsData?.items || [];
+  // Handle both paginated response and plain array
+  const endpoints = Array.isArray(endpointsData)
+    ? endpointsData
+    : (endpointsData?.items || []);
 
   const { data: structure, isLoading: structureLoading } = useQuery({
     queryKey: ['shot-structure', selectedEndpoint],
