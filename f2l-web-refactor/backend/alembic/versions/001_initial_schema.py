@@ -18,14 +18,62 @@ depends_on = None
 
 def upgrade() -> None:
     # Create enum types
-    op.execute("CREATE TYPE IF NOT EXISTS endpointtype AS ENUM ('ftp', 'sftp', 's3', 'local')")
-    op.execute("CREATE TYPE IF NOT EXISTS syncdirection AS ENUM ('source_to_dest', 'dest_to_source', 'bidirectional')")
-    op.execute("CREATE TYPE IF NOT EXISTS foldermatchmode AS ENUM ('exact', 'contains', 'startswith')")
-    op.execute("CREATE TYPE IF NOT EXISTS executionstatus AS ENUM ('queued', 'running', 'completed', 'failed', 'cancelled')")
-    op.execute("CREATE TYPE IF NOT EXISTS operationtype AS ENUM ('upload', 'download', 'delete', 'skip')")
-    op.execute("CREATE TYPE IF NOT EXISTS operationstatus AS ENUM ('pending', 'in_progress', 'completed', 'failed', 'skipped')")
-    op.execute("CREATE TYPE IF NOT EXISTS loglevel AS ENUM ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL')")
-    op.execute("CREATE TYPE IF NOT EXISTS scheduleunit AS ENUM ('minutes', 'hours', 'days')")
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE endpointtype AS ENUM ('ftp', 'sftp', 's3', 'local');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE syncdirection AS ENUM ('source_to_dest', 'dest_to_source', 'bidirectional');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE foldermatchmode AS ENUM ('exact', 'contains', 'startswith');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE executionstatus AS ENUM ('queued', 'running', 'completed', 'failed', 'cancelled');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE operationtype AS ENUM ('upload', 'download', 'delete', 'skip');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE operationstatus AS ENUM ('pending', 'in_progress', 'completed', 'failed', 'skipped');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE loglevel AS ENUM ('DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
+    op.execute("""
+        DO $$ BEGIN
+            CREATE TYPE scheduleunit AS ENUM ('minutes', 'hours', 'days');
+        EXCEPTION
+            WHEN duplicate_object THEN null;
+        END $$;
+    """)
 
     # Create endpoints table
     op.create_table('endpoints',
