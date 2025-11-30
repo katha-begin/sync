@@ -23,7 +23,7 @@ from app.database.models import (
 from app.core.ftp_manager import FTPManager, FTPConfig
 from app.core.local_manager import LocalManager, LocalConfig
 from app.utils.shot_path_utils import ShotPathUtils
-from app.core.encryption import decrypt_password
+from app.core.security import decrypt_password
 
 logger = logging.getLogger(__name__)
 
