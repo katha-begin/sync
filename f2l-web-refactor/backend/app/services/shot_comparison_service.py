@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.database.models import Endpoint, EndpointType
 from app.core.ftp_manager import FTPManager, FTPConfig
 from app.core.local_manager import LocalManager, LocalConfig
+from app.core.security import decrypt_password
 from app.utils.shot_path_utils import ShotPathUtils, ShotPaths
 
 logger = logging.getLogger(__name__)
@@ -164,11 +165,14 @@ class ShotComparisonService:
         """Get content from FTP for specific path."""
         import asyncio
 
+        # Decrypt password before passing to FTP manager
+        decrypted_password = decrypt_password(endpoint.password_encrypted) if endpoint.password_encrypted else ""
+
         # Create FTP manager
         ftp_config = FTPConfig(
             host=endpoint.host,
             username=endpoint.username,
-            password=endpoint.password_encrypted,  # TODO: Decrypt password
+            password=decrypted_password,
             port=endpoint.port or 21
         )
         ftp_manager = FTPManager(ftp_config)
@@ -182,10 +186,12 @@ class ShotComparisonService:
             if department == "anim":
                 # List version directories: v001, v002, v003, etc.
                 try:
-                    files = await loop.run_in_executor(None, ftp_manager.list_files, paths.ftp_path, False)
+                    # list_directory returns List[FTPFileInfo]
+                    file_infos = await loop.run_in_executor(None, ftp_manager.list_directory, paths.ftp_path, False)
                     versions = [
-                        f["name"] for f in files
-                        if not f.get("is_file", True) and re.match(r'^v\d+$', f["name"])
+                        file_info.path.split('/')[-1]  # Get just the name from the path
+                        for file_info in file_infos
+                        if not file_info.is_file and re.match(r'^v\d+$', file_info.path.split('/')[-1])
                     ]
 
                     if not versions:
@@ -195,7 +201,19 @@ class ShotComparisonService:
                     version_path = f"{paths.ftp_path}/{latest_version}"
 
                     # List files in latest version
-                    version_files = await loop.run_in_executor(None, ftp_manager.list_files, version_path, True)
+                    version_file_infos = await loop.run_in_executor(None, ftp_manager.list_directory, version_path, True)
+
+                    # Convert FTPFileInfo to dict format
+                    version_files = [
+                        {
+                            "name": file_info.path.split('/')[-1],
+                            "path": file_info.path,
+                            "size": file_info.size,
+                            "is_file": file_info.is_file,
+                            "modified": file_info.modified
+                        }
+                        for file_info in version_file_infos
+                    ]
 
                     return {
                         "exists": True,
@@ -211,10 +229,21 @@ class ShotComparisonService:
             elif department == "lighting":
                 # List all files in version/ directory
                 try:
-                    files = await loop.run_in_executor(None, ftp_manager.list_files, paths.ftp_path, False)
+                    # list_directory returns List[FTPFileInfo]
+                    file_infos = await loop.run_in_executor(None, ftp_manager.list_directory, paths.ftp_path, False)
 
-                    # Filter only files (not directories)
-                    file_list = [f for f in files if f.get("is_file", True)]
+                    # Filter only files (not directories) and convert to dict format
+                    file_list = [
+                        {
+                            "name": file_info.path.split('/')[-1],
+                            "path": file_info.path,
+                            "size": file_info.size,
+                            "is_file": file_info.is_file,
+                            "modified": file_info.modified
+                        }
+                        for file_info in file_infos
+                        if file_info.is_file
+                    ]
 
                     # Extract versions from filenames
                     file_versions = {}
