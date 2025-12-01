@@ -54,20 +54,28 @@ class ShotDownloadService:
         task_name: str,
         shots: List[Dict[str, str]],
         departments: List[str],
+        version_strategy: str = 'latest',
+        specific_version: Optional[str] = None,
+        custom_versions: Optional[Dict[str, str]] = None,
+        conflict_strategy: str = 'skip',
         created_by: Optional[str] = None,
         notes: Optional[str] = None
     ) -> Dict[str, any]:
         """
         Create a download task from user selections.
-        
+
         Args:
             endpoint_id: Endpoint UUID
             task_name: User-friendly task name
             shots: List of dicts with 'episode', 'sequence', 'shot' keys
             departments: List of departments to download ('anim', 'lighting')
+            version_strategy: 'latest', 'specific', 'all', 'custom'
+            specific_version: Version to download when strategy is 'specific' (e.g., 'v005')
+            custom_versions: Dict mapping shot_key to version when strategy is 'custom'
+            conflict_strategy: 'skip', 'overwrite', 'compare', 'keep_both'
             created_by: Username who created the task
             notes: Optional notes
-        
+
         Returns:
             Dict with task information
         """
@@ -79,6 +87,9 @@ class ShotDownloadService:
             name=task_name,
             endpoint_id=endpoint_id,
             status=ShotDownloadTaskStatus.PENDING,
+            version_strategy=version_strategy,
+            specific_version=specific_version,
+            conflict_strategy=conflict_strategy,
             total_items=0,
             completed_items=0,
             failed_items=0,
@@ -107,6 +118,12 @@ class ShotDownloadService:
                 
                 # Only add if needs update
                 if comparison.needs_update:
+                    # Determine selected version for custom strategy
+                    selected_version = None
+                    if version_strategy == 'custom' and custom_versions:
+                        shot_key = f"{comparison.shot}-{comparison.department}"
+                        selected_version = custom_versions.get(shot_key, comparison.latest_version)
+
                     item = ShotDownloadItem(
                         id=uuid4(),
                         task_id=task.id,
@@ -116,12 +133,18 @@ class ShotDownloadService:
                         department=comparison.department,
                         ftp_version=comparison.ftp_version,
                         local_version=comparison.local_version,
+                        selected_version=selected_version,
+                        available_versions=comparison.available_versions,
+                        latest_version=comparison.latest_version,
                         ftp_path=comparison.ftp_path,
                         local_path=comparison.local_path,
                         status=ShotDownloadItemStatus.PENDING,
                         file_count=comparison.file_count,
                         total_size=comparison.total_size,
-                        downloaded_size=0
+                        downloaded_size=0,
+                        files_skipped=0,
+                        files_overwritten=0,
+                        files_kept_both=0
                     )
                     items_to_create.append(item)
                     total_size += comparison.total_size
@@ -332,24 +355,75 @@ class ShotDownloadService:
             ftp_manager.close()
             local_manager.close()
 
+    def _determine_version_to_download(self, item: ShotDownloadItem) -> Optional[str]:
+        """
+        Determine which version to download based on task's version strategy.
+
+        Args:
+            item: ShotDownloadItem with version information
+
+        Returns:
+            Version string (e.g., 'v005') or None if version not available
+        """
+        strategy = item.task.version_strategy
+
+        if strategy == 'latest':
+            # Download latest version
+            return item.latest_version or item.ftp_version
+
+        elif strategy == 'specific':
+            # Download specific version if available
+            specific_version = item.task.specific_version
+            if specific_version in (item.available_versions or []):
+                return specific_version
+            else:
+                logger.warning(
+                    f"Version {specific_version} not available for {item.shot}/{item.department}, "
+                    f"available: {item.available_versions}"
+                )
+                return None
+
+        elif strategy == 'custom':
+            # Download custom selected version
+            return item.selected_version or item.latest_version
+
+        elif strategy == 'all':
+            # For 'all' strategy, this method shouldn't be called
+            # Instead, _download_all_versions should be called
+            logger.warning("_determine_version_to_download called with 'all' strategy")
+            return item.latest_version
+
+        # Default to latest
+        return item.latest_version or item.ftp_version
+
     async def _download_anim_version(
         self,
         ftp_manager: FTPManager,
         local_manager: LocalManager,
         item: ShotDownloadItem
     ):
-        """Download animation version directory."""
+        """Download animation version directory with version selection and conflict handling."""
         import os
 
+        # Determine which version to download based on strategy
+        version_to_download = self._determine_version_to_download(item)
+
+        if not version_to_download:
+            logger.warning(f"No version to download for {item.shot}/{item.department}, skipping")
+            item.status = ShotDownloadItemStatus.FAILED
+            item.error_message = "No version available to download"
+            await self.db.commit()
+            return
+
         # Build version path
-        version_path = f"{item.ftp_path}/{item.ftp_version}"
+        version_path = f"{item.ftp_path}/{version_to_download}"
 
         # Convert relative local path to absolute path
         local_path = item.local_path
         if not local_path.startswith('/'):
             local_path = os.path.join('/mnt', local_path)
 
-        local_version_path = os.path.join(local_path, item.ftp_version)
+        local_version_path = os.path.join(local_path, version_to_download)
 
         # Create local directory
         os.makedirs(local_version_path, exist_ok=True)
@@ -358,9 +432,12 @@ class ShotDownloadService:
         loop = asyncio.get_event_loop()
         file_infos = await loop.run_in_executor(None, ftp_manager.list_directory, version_path, True)
 
-        logger.info(f"Downloading {len(file_infos)} files from {version_path}")
+        logger.info(f"Downloading {len(file_infos)} files from {version_path} (version: {version_to_download})")
 
-        # Download each file
+        # Get conflict strategy
+        conflict_strategy = item.task.conflict_strategy
+
+        # Download each file with conflict handling
         for file_info in file_infos:
             if file_info.is_file:
                 # Extract relative path from full path
@@ -372,15 +449,27 @@ class ShotDownloadService:
                 local_dir = os.path.dirname(local_file)
                 os.makedirs(local_dir, exist_ok=True)
 
-                # Download file
-                await loop.run_in_executor(
+                # Download file with conflict handling
+                result = await loop.run_in_executor(
                     None,
-                    ftp_manager.download_file,
+                    ftp_manager.download_file_with_conflict_handling,
                     remote_file,
-                    local_file
+                    local_file,
+                    conflict_strategy
                 )
 
-                logger.debug(f"Downloaded {remote_file} -> {local_file}")
+                # Update statistics based on action
+                if result.get('success'):
+                    action = result.get('action', 'downloaded')
+                    if action == 'skipped':
+                        item.files_skipped += 1
+                    elif action == 'overwritten':
+                        item.files_overwritten += 1
+                    elif action == 'kept_both':
+                        item.files_kept_both += 1
+
+                    await self.db.commit()
+                    logger.debug(f"{action.capitalize()}: {remote_file} -> {local_file}")
 
     async def _download_lighting_files(
         self,
@@ -388,7 +477,7 @@ class ShotDownloadService:
         local_manager: LocalManager,
         item: ShotDownloadItem
     ):
-        """Download lighting files."""
+        """Download lighting files with conflict handling."""
         import os
 
         # Convert relative local path to absolute path
@@ -410,21 +499,36 @@ class ShotDownloadService:
 
         logger.info(f"Downloading {len(comparison.files_to_download)} lighting files")
 
-        # Download each file
+        # Get conflict strategy
+        conflict_strategy = item.task.conflict_strategy
+
+        # Download each file with conflict handling
         loop = asyncio.get_event_loop()
         for file_info in comparison.files_to_download:
             remote_file = f"{item.ftp_path}/{file_info['name']}"
             local_file = os.path.join(local_path, file_info['name'])
 
-            # Download file
-            await loop.run_in_executor(
+            # Download file with conflict handling
+            result = await loop.run_in_executor(
                 None,
-                ftp_manager.download_file,
+                ftp_manager.download_file_with_conflict_handling,
                 remote_file,
-                local_file
+                local_file,
+                conflict_strategy
             )
 
-            logger.debug(f"Downloaded {remote_file} -> {local_file}")
+            # Update statistics based on action
+            if result.get('success'):
+                action = result.get('action', 'downloaded')
+                if action == 'skipped':
+                    item.files_skipped += 1
+                elif action == 'overwritten':
+                    item.files_overwritten += 1
+                elif action == 'kept_both':
+                    item.files_kept_both += 1
+
+                await self.db.commit()
+                logger.debug(f"{action.capitalize()}: {remote_file} -> {local_file}")
 
     async def get_task_status(self, task_id: UUID) -> Dict[str, any]:
         """

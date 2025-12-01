@@ -430,6 +430,127 @@ class FTPManager:
                 "error": str(e)
             }
 
+    def download_file_with_conflict_handling(
+        self,
+        remote_path: str,
+        local_path: str,
+        conflict_strategy: str = 'skip',
+        progress_callback: Optional[Callable[[int], None]] = None
+    ) -> Dict[str, Any]:
+        """
+        Download file with conflict handling strategy.
+
+        Args:
+            remote_path: Remote file path on FTP
+            local_path: Local file path to save to
+            conflict_strategy: 'skip', 'overwrite', 'compare', 'keep_both'
+            progress_callback: Optional callback function(bytes_transferred)
+
+        Returns:
+            Dict with keys: 'action' ('downloaded', 'skipped', 'overwritten', 'kept_both'),
+                           'local_path', 'size', 'success'
+        """
+        try:
+            # Check if file exists locally
+            if os.path.exists(local_path):
+                if conflict_strategy == 'skip':
+                    # Skip existing file
+                    local_size = os.path.getsize(local_path)
+                    logger.info(f"Skipping existing file: {local_path}")
+                    return {
+                        'success': True,
+                        'action': 'skipped',
+                        'local_path': local_path,
+                        'size': local_size,
+                        'remote_path': remote_path
+                    }
+
+                elif conflict_strategy == 'compare':
+                    # Compare file metadata
+                    try:
+                        # Get remote file info
+                        remote_size = self.ftp.size(remote_path)
+                        remote_mtime = self.get_file_mtime(remote_path)
+
+                        # Get local file info
+                        local_size = os.path.getsize(local_path)
+                        local_mtime = datetime.fromtimestamp(os.path.getmtime(local_path), tz=timezone.utc)
+
+                        # Skip if same size and remote is not newer
+                        if local_size == remote_size and (remote_mtime is None or remote_mtime <= local_mtime):
+                            logger.info(f"Skipping unchanged file: {local_path}")
+                            return {
+                                'success': True,
+                                'action': 'skipped',
+                                'local_path': local_path,
+                                'size': local_size,
+                                'remote_path': remote_path
+                            }
+
+                        # Otherwise, overwrite
+                        logger.info(f"Overwriting outdated file: {local_path}")
+                        result = self.download_file(remote_path, local_path, progress_callback)
+                        if result.get('success'):
+                            result['action'] = 'overwritten'
+                        return result
+
+                    except Exception as e:
+                        logger.warning(f"Failed to compare files, downloading anyway: {e}")
+                        result = self.download_file(remote_path, local_path, progress_callback)
+                        if result.get('success'):
+                            result['action'] = 'overwritten'
+                        return result
+
+                elif conflict_strategy == 'keep_both':
+                    # Rename existing file with timestamp
+                    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                    base, ext = os.path.splitext(local_path)
+                    backup_path = f"{base}_backup_{timestamp}{ext}"
+
+                    try:
+                        os.rename(local_path, backup_path)
+                        logger.info(f"Renamed existing file to: {backup_path}")
+                    except Exception as e:
+                        logger.error(f"Failed to rename existing file: {e}")
+                        return {
+                            'success': False,
+                            'action': 'error',
+                            'error': f"Failed to rename existing file: {e}",
+                            'local_path': local_path,
+                            'remote_path': remote_path
+                        }
+
+                    # Download new file
+                    result = self.download_file(remote_path, local_path, progress_callback)
+                    if result.get('success'):
+                        result['action'] = 'kept_both'
+                        result['backup_path'] = backup_path
+                    return result
+
+                elif conflict_strategy == 'overwrite':
+                    # Overwrite without checking
+                    logger.info(f"Overwriting file: {local_path}")
+                    result = self.download_file(remote_path, local_path, progress_callback)
+                    if result.get('success'):
+                        result['action'] = 'overwritten'
+                    return result
+
+            # File doesn't exist, download normally
+            result = self.download_file(remote_path, local_path, progress_callback)
+            if result.get('success'):
+                result['action'] = 'downloaded'
+            return result
+
+        except Exception as e:
+            logger.error(f"Error in download_file_with_conflict_handling: {e}")
+            return {
+                'success': False,
+                'action': 'error',
+                'error': str(e),
+                'local_path': local_path,
+                'remote_path': remote_path
+            }
+
     def upload_file(
         self,
         local_path: str,

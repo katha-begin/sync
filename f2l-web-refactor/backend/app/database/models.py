@@ -500,6 +500,13 @@ class ShotDownloadTask(Base):
     # Status
     status: Mapped[ShotDownloadTaskStatus] = mapped_column(Enum(ShotDownloadTaskStatus, values_callable=lambda x: [e.value for e in x]), default=ShotDownloadTaskStatus.PENDING)
 
+    # Version Control
+    version_strategy: Mapped[str] = mapped_column(String(20), default='latest')  # 'latest', 'specific', 'all', 'custom'
+    specific_version: Mapped[Optional[str]] = mapped_column(String(20))  # Used when version_strategy = 'specific'
+
+    # File Conflict Handling
+    conflict_strategy: Mapped[str] = mapped_column(String(20), default='skip')  # 'skip', 'overwrite', 'compare', 'keep_both'
+
     # Progress tracking
     total_items: Mapped[int] = mapped_column(Integer, default=0)
     completed_items: Mapped[int] = mapped_column(Integer, default=0)
@@ -559,6 +566,11 @@ class ShotDownloadItem(Base):
     ftp_version: Mapped[Optional[str]] = mapped_column(String(50))
     local_version: Mapped[Optional[str]] = mapped_column(String(50))
 
+    # Version Control (for custom version selection)
+    selected_version: Mapped[Optional[str]] = mapped_column(String(20))  # Used when task.version_strategy = 'custom'
+    available_versions: Mapped[Optional[list]] = mapped_column(postgresql.JSONB)  # List of available versions from FTP
+    latest_version: Mapped[Optional[str]] = mapped_column(String(20))  # Latest available version
+
     # Paths
     ftp_path: Mapped[str] = mapped_column(Text, nullable=False)
     local_path: Mapped[str] = mapped_column(Text, nullable=False)
@@ -570,6 +582,11 @@ class ShotDownloadItem(Base):
     file_count: Mapped[int] = mapped_column(Integer, default=0)
     total_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
     downloaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+
+    # File Statistics (for conflict handling)
+    files_skipped: Mapped[int] = mapped_column(Integer, default=0)
+    files_overwritten: Mapped[int] = mapped_column(Integer, default=0)
+    files_kept_both: Mapped[int] = mapped_column(Integer, default=0)
 
     # Error handling
     error_message: Mapped[Optional[str]] = mapped_column(Text)

@@ -40,16 +40,20 @@ class ShotComparison:
     # Version info
     ftp_version: Optional[str]
     local_version: Optional[str]
-    
+
+    # Version Control (for version selection feature)
+    available_versions: Optional[List[str]] = None  # All available versions on FTP
+    latest_version: Optional[str] = None  # Latest available version
+
     # Comparison result
     needs_update: bool
     status: str  # 'up_to_date', 'update_available', 'new_download', 'ftp_missing', 'error'
-    
+
     # Files to download
     files_to_download: List[Dict[str, any]]
     file_count: int
     total_size: int  # bytes
-    
+
     # Error info
     error_message: Optional[str] = None
 
@@ -114,13 +118,17 @@ class ShotComparisonService:
         try:
             # Get FTP content
             ftp_content = await self._get_ftp_content(endpoint, paths, department)
-            
+
             # Get Local content
             local_content = await self._get_local_content(endpoint, paths, department)
-            
+
+            # List available versions
+            available_versions = await self._list_available_versions(endpoint, paths, department)
+            latest_version = available_versions[-1] if available_versions else None
+
             # Compare
             comparison_result = self._compare_content(ftp_content, local_content, department)
-            
+
             return ShotComparison(
                 episode=episode,
                 sequence=sequence,
@@ -130,6 +138,8 @@ class ShotComparisonService:
                 local_path=paths.local_path,
                 ftp_version=comparison_result["ftp_version"],
                 local_version=comparison_result["local_version"],
+                available_versions=available_versions,
+                latest_version=latest_version,
                 needs_update=comparison_result["needs_update"],
                 status=comparison_result["status"],
                 files_to_download=comparison_result["files_to_download"],
@@ -157,6 +167,119 @@ class ShotComparisonService:
                 total_size=0,
                 error_message=str(e)
             )
+
+    async def _list_available_versions(
+        self,
+        endpoint: Endpoint,
+        paths: ShotPaths,
+        department: str
+    ) -> List[str]:
+        """
+        List all available versions for a shot/department on FTP.
+
+        Args:
+            endpoint: Endpoint object
+            paths: ShotPaths object with FTP paths
+            department: "anim" or "lighting"
+
+        Returns:
+            Sorted list of version strings (e.g., ["v001", "v002", "v003"])
+        """
+        import asyncio
+
+        # Decrypt password
+        decrypted_password = decrypt_password(endpoint.password_encrypted) if endpoint.password_encrypted else ""
+
+        # Create FTP manager
+        ftp_config = FTPConfig(
+            host=endpoint.host,
+            username=endpoint.username,
+            password=decrypted_password,
+            port=endpoint.port,
+            timeout=endpoint.timeout,
+            passive_mode=endpoint.passive_mode
+        )
+        ftp_manager = FTPManager(ftp_config)
+
+        try:
+            # Connect
+            loop = asyncio.get_event_loop()
+            connected = await loop.run_in_executor(None, ftp_manager.connect)
+
+            if not connected:
+                logger.error(f"Failed to connect to FTP for version listing")
+                return []
+
+            if department == "anim":
+                return await self._list_anim_versions(ftp_manager, paths)
+            else:
+                return await self._list_lighting_versions(ftp_manager, paths)
+
+        except Exception as e:
+            logger.error(f"Error listing versions: {e}")
+            return []
+        finally:
+            try:
+                await loop.run_in_executor(None, ftp_manager.disconnect)
+            except:
+                pass
+
+    async def _list_anim_versions(
+        self,
+        ftp_manager: FTPManager,
+        paths: ShotPaths
+    ) -> List[str]:
+        """List all available animation versions."""
+        import asyncio
+
+        publish_path = f"{paths.anim_path}/publish"
+
+        try:
+            loop = asyncio.get_event_loop()
+            items = await loop.run_in_executor(None, ftp_manager.list_directory, publish_path, False)
+
+            # Extract version directories (v001, v002, etc.)
+            versions = [
+                item.path.split('/')[-1]
+                for item in items
+                if not item.is_file and re.match(r'^v\d+$', item.path.split('/')[-1])
+            ]
+
+            return sorted(versions)
+
+        except Exception as e:
+            logger.error(f"Failed to list anim versions: {e}")
+            return []
+
+    async def _list_lighting_versions(
+        self,
+        ftp_manager: FTPManager,
+        paths: ShotPaths
+    ) -> List[str]:
+        """List all available lighting versions."""
+        import asyncio
+
+        version_path = f"{paths.lighting_path}/version"
+
+        try:
+            loop = asyncio.get_event_loop()
+            items = await loop.run_in_executor(None, ftp_manager.list_directory, version_path, False)
+
+            # Extract unique version numbers from filenames
+            versions = set()
+            for item in items:
+                if item.is_file:
+                    filename = item.path.split('/')[-1]
+                    # Extract version like v001, v002 from filename (e.g., shot_v001.exr)
+                    match = re.search(r'_v(\d+)\.', filename)
+                    if match:
+                        versions.add(f"v{match.group(1)}")
+
+            return sorted(list(versions))
+
+        except Exception as e:
+            logger.error(f"Failed to list lighting versions: {e}")
+            return []
 
     async def _get_ftp_content(
         self,
