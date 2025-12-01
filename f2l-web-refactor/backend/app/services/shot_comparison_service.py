@@ -116,15 +116,17 @@ class ShotComparisonService:
         )
         
         try:
-            # Get FTP content
+            # Get FTP content (now includes all_versions)
             ftp_content = await self._get_ftp_content(endpoint, paths, department)
 
             # Get Local content
             local_content = await self._get_local_content(endpoint, paths, department)
 
-            # List available versions
-            available_versions = await self._list_available_versions(endpoint, paths, department)
+            # Get available versions from ftp_content (no separate FTP call needed)
+            available_versions = ftp_content.get("all_versions", [])
             latest_version = available_versions[-1] if available_versions else None
+
+            logger.info(f"Shot {episode}/{sequence}/{shot}/{department}: found {len(available_versions)} versions: {available_versions}")
 
             # Compare
             comparison_result = self._compare_content(ftp_content, local_content, department)
@@ -160,6 +162,8 @@ class ShotComparisonService:
                 local_path=paths.local_path,
                 ftp_version=None,
                 local_version=None,
+                available_versions=[],
+                latest_version=None,
                 needs_update=False,
                 status="error",
                 files_to_download=[],
@@ -351,6 +355,7 @@ class ShotComparisonService:
                     return {
                         "exists": True,
                         "version": latest_version,
+                        "all_versions": sorted(versions),  # Return all versions found
                         "files": version_files,
                         "file_count": len(version_files),
                         "total_size": sum(f.get("size", 0) for f in version_files)
@@ -380,14 +385,20 @@ class ShotComparisonService:
 
                     # Extract versions from filenames
                     file_versions = {}
+                    all_versions_set = set()
                     for f in file_list:
                         version = ShotPathUtils.extract_version_from_filename(f["name"])
                         if version:
                             file_versions[f["name"]] = version
+                            all_versions_set.add(version)
+
+                    all_versions = sorted(list(all_versions_set))
+                    latest_version = all_versions[-1] if all_versions else None
 
                     return {
                         "exists": True,
-                        "version": None,  # No version directory for lighting
+                        "version": latest_version,  # Latest version from filenames
+                        "all_versions": all_versions,  # All versions found in filenames
                         "files": file_list,
                         "file_versions": file_versions,
                         "file_count": len(file_list),
