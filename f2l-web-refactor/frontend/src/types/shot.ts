@@ -38,6 +38,8 @@ export interface ShotComparison {
   department: string;
   ftp_version?: string;
   local_version?: string;
+  available_versions?: string[];  // All available versions on FTP
+  latest_version?: string;  // Latest available version
   needs_update: boolean;
   status: 'up_to_date' | 'update_available' | 'new_download' | 'ftp_missing' | 'error';
   file_count: number;
@@ -51,11 +53,18 @@ export interface CompareRequest {
   departments: string[];
 }
 
+export type VersionStrategy = 'latest' | 'specific' | 'all' | 'custom';
+export type ConflictStrategy = 'skip' | 'overwrite' | 'compare' | 'keep_both';
+
 export interface CreateTaskRequest {
   endpoint_id: string;
   task_name: string;
   shots: ShotSelection[];
   departments: string[];
+  version_strategy?: VersionStrategy;
+  specific_version?: string;
+  custom_versions?: Record<string, string>;  // Map of "shot-department" to version
+  conflict_strategy?: ConflictStrategy;
   notes?: string;
   created_by?: string;
 }
@@ -67,6 +76,9 @@ export interface DownloadTask {
   task_id: string;
   name: string;
   status: TaskStatus;
+  version_strategy?: VersionStrategy;
+  specific_version?: string;
+  conflict_strategy?: ConflictStrategy;
   total_items: number;
   completed_items: number;
   failed_items: number;
@@ -88,10 +100,16 @@ export interface DownloadTaskItem {
   department: string;
   ftp_version?: string;
   local_version?: string;
+  selected_version?: string;
+  available_versions?: string[];
+  latest_version?: string;
   status: ItemStatus;
   file_count: number;
   total_size: number;
   downloaded_size: number;
+  files_skipped?: number;
+  files_overwritten?: number;
+  files_kept_both?: number;
   error_message?: string;
   started_at?: string;
   completed_at?: string;
@@ -159,3 +177,18 @@ export const COMPARISON_STATUS_COLORS: Record<ShotComparison['status'], string> 
   error: '#f44336',
 };
 
+// Version Strategy labels
+export const VERSION_STRATEGY_LABELS: Record<VersionStrategy, string> = {
+  latest: 'Latest Version',
+  specific: 'Specific Version',
+  all: 'All Versions',
+  custom: 'Custom (Per Shot)',
+};
+
+// Conflict Strategy labels
+export const CONFLICT_STRATEGY_LABELS: Record<ConflictStrategy, string> = {
+  skip: 'Skip Existing',
+  overwrite: 'Overwrite All',
+  compare: 'Compare & Update',
+  keep_both: 'Keep Both',
+};
