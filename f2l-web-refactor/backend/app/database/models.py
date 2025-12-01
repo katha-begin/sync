@@ -166,12 +166,12 @@ class SyncSession(Base):
     destination_path: Mapped[str] = mapped_column(String(1024), default="/")
 
     # Sync Configuration
-    sync_direction: Mapped[SyncDirection] = mapped_column(Enum(SyncDirection), default=SyncDirection.SOURCE_TO_DEST)
+    sync_direction: Mapped[SyncDirection] = mapped_column(Enum(SyncDirection, values_callable=lambda x: [e.value for e in x]), default=SyncDirection.SOURCE_TO_DEST)
 
     # Folder Filtering
     folder_filter_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     folder_names: Mapped[Optional[list]] = mapped_column(JSONB)  # List of folder names
-    folder_match_mode: Mapped[FolderMatchMode] = mapped_column(Enum(FolderMatchMode), default=FolderMatchMode.CONTAINS)
+    folder_match_mode: Mapped[FolderMatchMode] = mapped_column(Enum(FolderMatchMode, values_callable=lambda x: [e.value for e in x]), default=FolderMatchMode.CONTAINS)
     folder_case_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # File Pattern Filtering
@@ -185,7 +185,7 @@ class SyncSession(Base):
     # Scheduling
     schedule_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     schedule_interval: Mapped[Optional[int]] = mapped_column(Integer)  # Number value
-    schedule_unit: Mapped[Optional[ScheduleUnit]] = mapped_column(Enum(ScheduleUnit))  # minutes, hours, days
+    schedule_unit: Mapped[Optional[ScheduleUnit]] = mapped_column(Enum(ScheduleUnit, values_callable=lambda x: [e.value for e in x]))  # minutes, hours, days
     auto_start_enabled: Mapped[bool] = mapped_column(Boolean, default=False)
     next_run_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
 
@@ -227,7 +227,7 @@ class SyncExecution(Base):
     session_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sync_sessions.id", ondelete="CASCADE"))
 
     # Execution Details
-    status: Mapped[ExecutionStatus] = mapped_column(Enum(ExecutionStatus), default=ExecutionStatus.QUEUED)
+    status: Mapped[ExecutionStatus] = mapped_column(Enum(ExecutionStatus, values_callable=lambda x: [e.value for e in x]), default=ExecutionStatus.QUEUED)
     is_dry_run: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Timing
@@ -282,8 +282,8 @@ class SyncOperation(Base):
     execution_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("sync_executions.id", ondelete="CASCADE"))
 
     # Operation Details
-    operation_type: Mapped[OperationType] = mapped_column(Enum(OperationType))
-    status: Mapped[OperationStatus] = mapped_column(Enum(OperationStatus), default=OperationStatus.PENDING)
+    operation_type: Mapped[OperationType] = mapped_column(Enum(OperationType, values_callable=lambda x: [e.value for e in x]))
+    status: Mapped[OperationStatus] = mapped_column(Enum(OperationStatus, values_callable=lambda x: [e.value for e in x]), default=OperationStatus.PENDING)
 
     # File Details
     source_path: Mapped[str] = mapped_column(String(1024))
@@ -322,7 +322,7 @@ class Log(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
 
     # Log Details
-    level: Mapped[LogLevel] = mapped_column(Enum(LogLevel), default=LogLevel.INFO)
+    level: Mapped[LogLevel] = mapped_column(Enum(LogLevel, values_callable=lambda x: [e.value for e in x]), default=LogLevel.INFO)
     message: Mapped[str] = mapped_column(Text)
     logger_name: Mapped[Optional[str]] = mapped_column(String(255))
 
@@ -498,7 +498,7 @@ class ShotDownloadTask(Base):
     endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"))
 
     # Status
-    status: Mapped[ShotDownloadTaskStatus] = mapped_column(Enum(ShotDownloadTaskStatus), default=ShotDownloadTaskStatus.PENDING)
+    status: Mapped[ShotDownloadTaskStatus] = mapped_column(Enum(ShotDownloadTaskStatus, values_callable=lambda x: [e.value for e in x]), default=ShotDownloadTaskStatus.PENDING)
 
     # Progress tracking
     total_items: Mapped[int] = mapped_column(Integer, default=0)
@@ -564,7 +564,7 @@ class ShotDownloadItem(Base):
     local_path: Mapped[str] = mapped_column(Text, nullable=False)
 
     # Status
-    status: Mapped[ShotDownloadItemStatus] = mapped_column(Enum(ShotDownloadItemStatus), default=ShotDownloadItemStatus.PENDING)
+    status: Mapped[ShotDownloadItemStatus] = mapped_column(Enum(ShotDownloadItemStatus, values_callable=lambda x: [e.value for e in x]), default=ShotDownloadItemStatus.PENDING)
 
     # Progress tracking
     file_count: Mapped[int] = mapped_column(Integer, default=0)
