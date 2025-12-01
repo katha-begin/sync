@@ -1,6 +1,6 @@
 """Add version selection and conflict handling fields
 
-Revision ID: 003_add_version_and_conflict_fields
+Revision ID: 003_version_conflict
 Revises: 002_add_shot_download_tables
 Create Date: 2025-01-30 14:00:00.000000
 
@@ -10,7 +10,7 @@ import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision = '003_add_version_and_conflict_fields'
+revision = '003_version_conflict'
 down_revision = '002_add_shot_download_tables'
 branch_labels = None
 depends_on = None
