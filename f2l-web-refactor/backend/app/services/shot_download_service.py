@@ -350,15 +350,17 @@ class ShotDownloadService:
 
         # List all files in version directory (recursive)
         loop = asyncio.get_event_loop()
-        files = await loop.run_in_executor(None, ftp_manager.list_files, version_path, True)
+        file_infos = await loop.run_in_executor(None, ftp_manager.list_directory, version_path, True)
 
-        logger.info(f"Downloading {len(files)} files from {version_path}")
+        logger.info(f"Downloading {len(file_infos)} files from {version_path}")
 
         # Download each file
-        for file_info in files:
-            if file_info.get("is_file", True):
-                remote_file = f"{version_path}/{file_info['name']}"
-                local_file = os.path.join(local_version_path, file_info['name'])
+        for file_info in file_infos:
+            if file_info.is_file:
+                # Extract relative path from full path
+                remote_file = file_info.path
+                relative_path = remote_file.replace(version_path + '/', '')
+                local_file = os.path.join(local_version_path, relative_path)
 
                 # Create subdirectories if needed
                 local_dir = os.path.dirname(local_file)
