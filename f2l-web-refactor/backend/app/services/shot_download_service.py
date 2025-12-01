@@ -343,7 +343,13 @@ class ShotDownloadService:
 
         # Build version path
         version_path = f"{item.ftp_path}/{item.ftp_version}"
-        local_version_path = os.path.join(item.local_path, item.ftp_version)
+
+        # Convert relative local path to absolute path
+        local_path = item.local_path
+        if not local_path.startswith('/'):
+            local_path = os.path.join('/mnt', local_path)
+
+        local_version_path = os.path.join(local_path, item.ftp_version)
 
         # Create local directory
         os.makedirs(local_version_path, exist_ok=True)
@@ -385,8 +391,13 @@ class ShotDownloadService:
         """Download lighting files."""
         import os
 
+        # Convert relative local path to absolute path
+        local_path = item.local_path
+        if not local_path.startswith('/'):
+            local_path = os.path.join('/mnt', local_path)
+
         # Create local directory
-        os.makedirs(item.local_path, exist_ok=True)
+        os.makedirs(local_path, exist_ok=True)
 
         # Get comparison to know which files to download
         comparison = await self.comparison_service.compare_shot(
@@ -403,7 +414,7 @@ class ShotDownloadService:
         loop = asyncio.get_event_loop()
         for file_info in comparison.files_to_download:
             remote_file = f"{item.ftp_path}/{file_info['name']}"
-            local_file = os.path.join(item.local_path, file_info['name'])
+            local_file = os.path.join(local_path, file_info['name'])
 
             # Download file
             await loop.run_in_executor(
