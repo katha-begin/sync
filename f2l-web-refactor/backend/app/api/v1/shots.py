@@ -17,6 +17,10 @@ from typing import List, Optional
 from uuid import UUID
 from pydantic import BaseModel, Field
 from datetime import datetime
+import logging
+import traceback
+
+logger = logging.getLogger(__name__)
 
 from app.database.session import get_db
 from app.services.shot_structure_scanner import ShotStructureScanner
@@ -274,6 +278,8 @@ async def create_download_task(
         return result
 
     except Exception as e:
+        logger.error(f"Failed to create download task: {e}")
+        logger.error(f"Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to create download task: {str(e)}"

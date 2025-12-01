@@ -138,7 +138,9 @@ class ShotComparisonService:
             )
             
         except Exception as e:
+            import traceback
             logger.error(f"Error comparing shot {episode}/{sequence}/{shot}/{department}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return ShotComparison(
                 episode=episode,
                 sequence=sequence,
