@@ -234,10 +234,12 @@ class ShotComparisonService:
 
         # paths.ftp_path already includes /anim/publish
         publish_path = paths.ftp_path
+        logger.info(f"Listing anim versions from: {publish_path}")
 
         try:
             loop = asyncio.get_event_loop()
             items = await loop.run_in_executor(None, ftp_manager.list_directory, publish_path, False)
+            logger.info(f"Found {len(items)} items in {publish_path}")
 
             # Extract version directories (v001, v002, etc.)
             versions = [
@@ -246,10 +248,11 @@ class ShotComparisonService:
                 if not item.is_file and re.match(r'^v\d+$', item.path.split('/')[-1])
             ]
 
+            logger.info(f"Extracted {len(versions)} versions: {versions}")
             return sorted(versions)
 
         except Exception as e:
-            logger.error(f"Failed to list anim versions: {e}")
+            logger.error(f"Failed to list anim versions from {publish_path}: {e}")
             return []
 
     async def _list_lighting_versions(
@@ -262,10 +265,12 @@ class ShotComparisonService:
 
         # paths.ftp_path already includes /lighting/version
         version_path = paths.ftp_path
+        logger.info(f"Listing lighting versions from: {version_path}")
 
         try:
             loop = asyncio.get_event_loop()
             items = await loop.run_in_executor(None, ftp_manager.list_directory, version_path, False)
+            logger.info(f"Found {len(items)} items in {version_path}")
 
             # Extract unique version numbers from filenames
             versions = set()
@@ -277,10 +282,11 @@ class ShotComparisonService:
                     if match:
                         versions.add(f"v{match.group(1)}")
 
+            logger.info(f"Extracted {len(versions)} versions: {sorted(list(versions))}")
             return sorted(list(versions))
 
         except Exception as e:
-            logger.error(f"Failed to list lighting versions: {e}")
+            logger.error(f"Failed to list lighting versions from {version_path}: {e}")
             return []
 
     async def _get_ftp_content(
