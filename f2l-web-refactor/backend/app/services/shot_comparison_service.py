@@ -41,10 +41,6 @@ class ShotComparison:
     ftp_version: Optional[str]
     local_version: Optional[str]
 
-    # Version Control (for version selection feature)
-    available_versions: Optional[List[str]] = None  # All available versions on FTP
-    latest_version: Optional[str] = None  # Latest available version
-
     # Comparison result
     needs_update: bool
     status: str  # 'up_to_date', 'update_available', 'new_download', 'ftp_missing', 'error'
@@ -53,6 +49,10 @@ class ShotComparison:
     files_to_download: List[Dict[str, any]]
     file_count: int
     total_size: int  # bytes
+
+    # Version Control (for version selection feature) - with defaults, must come after non-default fields
+    available_versions: Optional[List[str]] = None  # All available versions on FTP
+    latest_version: Optional[str] = None  # Latest available version
 
     # Error info
     error_message: Optional[str] = None
