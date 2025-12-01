@@ -16,6 +16,7 @@ import {
   TableRow,
   LinearProgress,
   CircularProgress,
+  Divider,
 } from '@mui/material';
 import { useQuery } from '@tanstack/react-query';
 import { shotService } from '@/services/shotService';
@@ -23,6 +24,8 @@ import {
   TASK_STATUS_LABELS,
   TASK_STATUS_COLORS,
   ITEM_STATUS_LABELS,
+  VERSION_STRATEGY_LABELS,
+  CONFLICT_STRATEGY_LABELS,
 } from '@/types/shot';
 import { formatBytes } from '@/utils/formatters';
 
@@ -99,6 +102,61 @@ const TaskDetailsDialog: React.FC<TaskDetailsDialogProps> = ({
           <Typography variant="body2">
             <strong>Downloaded:</strong> {formatBytes(task.downloaded_size)}
           </Typography>
+
+          <Divider sx={{ my: 2 }} />
+
+          {/* Version and Conflict Strategy */}
+          <Typography variant="body2">
+            <strong>Version Strategy:</strong>{' '}
+            {task.version_strategy ? VERSION_STRATEGY_LABELS[task.version_strategy] : 'Latest Version'}
+            {task.version_strategy === 'specific' && task.specific_version && (
+              <Chip
+                label={task.specific_version}
+                size="small"
+                sx={{ ml: 1 }}
+              />
+            )}
+          </Typography>
+          <Typography variant="body2">
+            <strong>Conflict Strategy:</strong>{' '}
+            {task.conflict_strategy ? CONFLICT_STRATEGY_LABELS[task.conflict_strategy] : 'Skip Existing'}
+          </Typography>
+
+          {/* File Statistics */}
+          {(items.some(item => item.files_skipped || item.files_overwritten || item.files_kept_both)) && (
+            <>
+              <Divider sx={{ my: 2 }} />
+              <Typography variant="body2" fontWeight="bold" gutterBottom>
+                File Statistics:
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                {items.reduce((sum, item) => sum + (item.files_skipped || 0), 0) > 0 && (
+                  <Chip
+                    label={`Skipped: ${items.reduce((sum, item) => sum + (item.files_skipped || 0), 0)}`}
+                    size="small"
+                    color="default"
+                  />
+                )}
+                {items.reduce((sum, item) => sum + (item.files_overwritten || 0), 0) > 0 && (
+                  <Chip
+                    label={`Overwritten: ${items.reduce((sum, item) => sum + (item.files_overwritten || 0), 0)}`}
+                    size="small"
+                    color="warning"
+                  />
+                )}
+                {items.reduce((sum, item) => sum + (item.files_kept_both || 0), 0) > 0 && (
+                  <Chip
+                    label={`Kept Both: ${items.reduce((sum, item) => sum + (item.files_kept_both || 0), 0)}`}
+                    size="small"
+                    color="info"
+                  />
+                )}
+              </Box>
+            </>
+          )}
+
+          <Divider sx={{ my: 2 }} />
+
           {task.created_at && (
             <Typography variant="body2">
               <strong>Created:</strong> {new Date(task.created_at).toLocaleString()}
@@ -133,10 +191,12 @@ const TaskDetailsDialog: React.FC<TaskDetailsDialogProps> = ({
                 <TableCell>Sequence</TableCell>
                 <TableCell>Shot</TableCell>
                 <TableCell>Department</TableCell>
-                <TableCell>FTP Version</TableCell>
+                <TableCell>Version</TableCell>
                 <TableCell>Status</TableCell>
                 <TableCell align="right">Files</TableCell>
                 <TableCell align="right">Size</TableCell>
+                <TableCell align="right">Skipped</TableCell>
+                <TableCell align="right">Overwritten</TableCell>
                 <TableCell>Error</TableCell>
               </TableRow>
             </TableHead>
@@ -150,9 +210,16 @@ const TaskDetailsDialog: React.FC<TaskDetailsDialogProps> = ({
                     {item.department}
                   </TableCell>
                   <TableCell>
-                    <Typography variant="body2" fontFamily="monospace">
-                      {item.ftp_version || '-'}
-                    </Typography>
+                    <Box>
+                      <Typography variant="body2" fontFamily="monospace">
+                        {item.selected_version || item.ftp_version || '-'}
+                      </Typography>
+                      {item.selected_version && item.selected_version !== item.ftp_version && (
+                        <Typography variant="caption" color="text.secondary">
+                          (FTP: {item.ftp_version})
+                        </Typography>
+                      )}
+                    </Box>
                   </TableCell>
                   <TableCell>
                     <Chip
@@ -168,6 +235,24 @@ const TaskDetailsDialog: React.FC<TaskDetailsDialogProps> = ({
                   </TableCell>
                   <TableCell align="right">{item.file_count}</TableCell>
                   <TableCell align="right">{formatBytes(item.total_size)}</TableCell>
+                  <TableCell align="right">
+                    {item.files_skipped ? (
+                      <Typography variant="body2" color="text.secondary">
+                        {item.files_skipped}
+                      </Typography>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
+                  <TableCell align="right">
+                    {item.files_overwritten ? (
+                      <Typography variant="body2" color="warning.main">
+                        {item.files_overwritten}
+                      </Typography>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
                   <TableCell>
                     {item.error_message && (
                       <Typography variant="caption" color="error">
