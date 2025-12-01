@@ -568,7 +568,7 @@ class ShotDownloadItem(Base):
 
     # Version Control (for custom version selection)
     selected_version: Mapped[Optional[str]] = mapped_column(String(20))  # Used when task.version_strategy = 'custom'
-    available_versions: Mapped[Optional[list]] = mapped_column(postgresql.JSONB)  # List of available versions from FTP
+    available_versions: Mapped[Optional[list]] = mapped_column(JSONB)  # List of available versions from FTP
     latest_version: Mapped[Optional[str]] = mapped_column(String(20))  # Latest available version
 
     # Paths
