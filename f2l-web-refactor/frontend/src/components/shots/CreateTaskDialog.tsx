@@ -16,12 +16,23 @@ import {
   InputLabel,
   Select,
   Chip,
+  Radio,
+  RadioGroup,
+  FormControlLabel,
+  FormLabel,
+  Divider,
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
 import { endpointService } from '@/services/endpointService';
 import { shotService } from '@/services/shotService';
 import { ROUTES } from '@/utils/constants';
+import {
+  VersionStrategy,
+  ConflictStrategy,
+  VERSION_STRATEGY_LABELS,
+  CONFLICT_STRATEGY_LABELS,
+} from '@/types/shot';
 
 interface CreateTaskDialogProps {
   open: boolean;
@@ -42,6 +53,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
   const [selectedSequences, setSelectedSequences] = useState<string[]>([]);
   const [selectedShots, setSelectedShots] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['anim', 'lighting']);
+  const [versionStrategy, setVersionStrategy] = useState<VersionStrategy>('latest');
+  const [specificVersion, setSpecificVersion] = useState('');
+  const [conflictStrategy, setConflictStrategy] = useState<ConflictStrategy>('skip');
   const [error, setError] = useState<string | null>(null);
 
   const { data: endpointsData } = useQuery({
@@ -95,6 +109,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
       setSelectedSequences([]);
       setSelectedShots([]);
       setSelectedDepartments(['anim', 'lighting']);
+      setVersionStrategy('latest');
+      setSpecificVersion('');
+      setConflictStrategy('skip');
       setError(null);
     }
   }, [open]);
@@ -121,6 +138,9 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
         task_name: taskName,
         shots,
         departments: selectedDepartments,
+        version_strategy: versionStrategy,
+        specific_version: versionStrategy === 'specific' ? specificVersion : undefined,
+        conflict_strategy: conflictStrategy,
         notes: notes || undefined,
       });
     },
@@ -145,6 +165,10 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
     }
     if (selectedShots.length === 0) {
       setError('Please select at least one shot');
+      return;
+    }
+    if (versionStrategy === 'specific' && !specificVersion.trim()) {
+      setError('Please enter a version number for specific version strategy');
       return;
     }
     createTaskMutation.mutate();
@@ -296,8 +320,147 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
                     </Select>
                   </FormControl>
                 </Grid>
+
+                {/* Version Strategy Section */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+                    Version Selection
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl component="fieldset">
+                    <FormLabel component="legend">Version Strategy</FormLabel>
+                    <RadioGroup
+                      value={versionStrategy}
+                      onChange={(e) => setVersionStrategy(e.target.value as VersionStrategy)}
+                    >
+                      <FormControlLabel
+                        value="latest"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {VERSION_STRATEGY_LABELS.latest}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Download the newest version of each shot (Recommended)
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <FormControlLabel
+                        value="specific"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {VERSION_STRATEGY_LABELS.specific}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Try to download the same version for all shots
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                    </RadioGroup>
+                  </FormControl>
+                </Grid>
+
+                {versionStrategy === 'specific' && (
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Version Number"
+                      value={specificVersion}
+                      onChange={(e) => setSpecificVersion(e.target.value)}
+                      placeholder="e.g., v005"
+                      helperText="Enter the version to download (e.g., v001, v002, v005). Shots without this version will be skipped."
+                    />
+                  </Grid>
+                )}
+
+                {/* Conflict Strategy Section */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+                    File Conflict Handling
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl component="fieldset">
+                    <FormLabel component="legend">What to do with existing files?</FormLabel>
+                    <RadioGroup
+                      value={conflictStrategy}
+                      onChange={(e) => setConflictStrategy(e.target.value as ConflictStrategy)}
+                    >
+                      <FormControlLabel
+                        value="skip"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {CONFLICT_STRATEGY_LABELS.skip}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Skip files that already exist locally (Recommended - Fast & Safe)
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <FormControlLabel
+                        value="compare"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {CONFLICT_STRATEGY_LABELS.compare}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Compare file size and date, update if FTP version is newer
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <FormControlLabel
+                        value="overwrite"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {CONFLICT_STRATEGY_LABELS.overwrite}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Overwrite all existing files without checking
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                      <FormControlLabel
+                        value="keep_both"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {CONFLICT_STRATEGY_LABELS.keep_both}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Rename existing files and download new ones
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                    </RadioGroup>
+                  </FormControl>
+                </Grid>
               </>
             )}
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+            </Grid>
 
             <Grid item xs={12}>
               <TextField

@@ -58,6 +58,8 @@ class ComparisonResult(BaseModel):
     department: str
     ftp_version: Optional[str]
     local_version: Optional[str]
+    available_versions: Optional[List[str]] = None
+    latest_version: Optional[str] = None
     needs_update: bool
     status: str
     file_count: int
@@ -71,6 +73,10 @@ class CreateTaskRequest(BaseModel):
     task_name: str = Field(..., description="User-friendly task name")
     shots: List[ShotSelection] = Field(..., description="List of shots to download")
     departments: List[str] = Field(default=["anim", "lighting"], description="Departments to download")
+    version_strategy: Optional[str] = Field('latest', description="Version strategy: latest, specific, all, custom")
+    specific_version: Optional[str] = Field(None, description="Specific version to download (e.g., v005)")
+    custom_versions: Optional[dict] = Field(None, description="Custom version per shot (shot-department: version)")
+    conflict_strategy: Optional[str] = Field('skip', description="Conflict strategy: skip, overwrite, compare, keep_both")
     notes: Optional[str] = Field(None, description="Optional notes")
     created_by: Optional[str] = Field(None, description="Username who created the task")
 
@@ -271,6 +277,10 @@ async def create_download_task(
             task_name=request.task_name,
             shots=shots,
             departments=request.departments,
+            version_strategy=request.version_strategy or 'latest',
+            specific_version=request.specific_version,
+            custom_versions=request.custom_versions,
+            conflict_strategy=request.conflict_strategy or 'skip',
             created_by=request.created_by,
             notes=request.notes
         )
