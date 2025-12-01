@@ -387,17 +387,18 @@ class ShotComparisonService:
                     file_versions = {}
                     all_versions_set = set()
                     for f in file_list:
-                        version = ShotPathUtils.extract_version_from_filename(f["name"])
-                        if version:
-                            file_versions[f["name"]] = version
-                            all_versions_set.add(version)
+                        version_num = ShotPathUtils.extract_version_from_filename(f["name"])
+                        if version_num:
+                            version_str = f"v{version_num:03d}"  # Convert 7 -> "v007"
+                            file_versions[f["name"]] = version_str
+                            all_versions_set.add(version_str)
 
                     all_versions = sorted(list(all_versions_set))
                     latest_version = all_versions[-1] if all_versions else None
 
                     return {
                         "exists": True,
-                        "version": latest_version,  # Latest version from filenames
+                        "version": latest_version,  # Latest version from filenames (e.g., "v007")
                         "all_versions": all_versions,  # All versions found in filenames
                         "files": file_list,
                         "file_versions": file_versions,
@@ -499,9 +500,10 @@ class ShotComparisonService:
                     # Extract versions from filenames
                     file_versions = {}
                     for f in file_list:
-                        version = ShotPathUtils.extract_version_from_filename(f["name"])
-                        if version:
-                            file_versions[f["name"]] = version
+                        version_num = ShotPathUtils.extract_version_from_filename(f["name"])
+                        if version_num:
+                            version_str = f"v{version_num:03d}"  # Convert 7 -> "v007"
+                            file_versions[f["name"]] = version_str
 
                     return {
                         "exists": True,
