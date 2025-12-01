@@ -425,7 +425,6 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
                           </TableHead>
                           <TableBody>
                             {comparisonResults.map((item, index) => {
-                              const shotKey = `${item.episode}|${item.sequence}|${item.shot}|${item.department}`;
                               return (
                                 <TableRow key={index}>
                                   <TableCell>
