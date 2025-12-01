@@ -196,8 +196,8 @@ class ShotComparisonService:
             username=endpoint.username,
             password=decrypted_password,
             port=endpoint.port,
-            timeout=endpoint.timeout,
-            passive_mode=endpoint.passive_mode
+            timeout=60,  # Default timeout
+            passive_mode=True  # Default passive mode
         )
         ftp_manager = FTPManager(ftp_config)
 
