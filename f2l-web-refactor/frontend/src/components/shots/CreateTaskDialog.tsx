@@ -21,6 +21,13 @@ import {
   FormControlLabel,
   FormLabel,
   Divider,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Paper,
 } from '@mui/material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from 'react-router-dom';
@@ -32,6 +39,7 @@ import {
   ConflictStrategy,
   VERSION_STRATEGY_LABELS,
   CONFLICT_STRATEGY_LABELS,
+  ShotComparison,
 } from '@/types/shot';
 
 interface CreateTaskDialogProps {
@@ -55,8 +63,11 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['anim', 'lighting']);
   const [versionStrategy, setVersionStrategy] = useState<VersionStrategy>('latest');
   const [specificVersion, setSpecificVersion] = useState('');
+  const [customVersions, setCustomVersions] = useState<Record<string, string>>({});
   const [conflictStrategy, setConflictStrategy] = useState<ConflictStrategy>('skip');
   const [error, setError] = useState<string | null>(null);
+  const [comparisonResults, setComparisonResults] = useState<ShotComparison[]>([]);
+  const [showComparison, setShowComparison] = useState(false);
 
   const { data: endpointsData } = useQuery({
     queryKey: ['endpoints'],
@@ -111,8 +122,11 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
       setSelectedDepartments(['anim', 'lighting']);
       setVersionStrategy('latest');
       setSpecificVersion('');
+      setCustomVersions({});
       setConflictStrategy('skip');
       setError(null);
+      setComparisonResults([]);
+      setShowComparison(false);
     }
   }, [open]);
 
@@ -125,6 +139,30 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
     const sequenceMatch = selectedSequences.length === 0 || selectedSequences.includes(shot.sequence);
     return episodeMatch && sequenceMatch;
   }) || [];
+
+  // Comparison mutation to get available versions
+  const compareMutation = useMutation({
+    mutationFn: async () => {
+      const shots = selectedShots.map(shotKey => {
+        const [episode, sequence, shot] = shotKey.split('|');
+        return { episode, sequence, shot };
+      });
+
+      return shotService.compareShots({
+        endpoint_id: selectedEndpoint,
+        shots,
+        departments: selectedDepartments,
+      });
+    },
+    onSuccess: (data) => {
+      setComparisonResults(data);
+      setShowComparison(true);
+      setError(null);
+    },
+    onError: (err: any) => {
+      setError(err.message || 'Failed to compare shots');
+    },
+  });
 
   const createTaskMutation = useMutation({
     mutationFn: async () => {
@@ -140,6 +178,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
         departments: selectedDepartments,
         version_strategy: versionStrategy,
         specific_version: versionStrategy === 'specific' ? specificVersion : undefined,
+        custom_versions: versionStrategy === 'custom' ? customVersions : undefined,
         conflict_strategy: conflictStrategy,
         notes: notes || undefined,
       });
@@ -153,6 +192,30 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
       setError(err.message || 'Failed to create task');
     },
   });
+
+  const handleCompare = () => {
+    if (!selectedEndpoint) {
+      setError('Please select an endpoint');
+      return;
+    }
+    if (selectedShots.length === 0) {
+      setError('Please select at least one shot');
+      return;
+    }
+    if (selectedDepartments.length === 0) {
+      setError('Please select at least one department');
+      return;
+    }
+    setError(null);
+    compareMutation.mutate();
+  };
+
+  const handleCustomVersionChange = (shotKey: string, version: string) => {
+    setCustomVersions(prev => ({
+      ...prev,
+      [shotKey]: version,
+    }));
+  };
 
   const handleCreate = () => {
     if (!taskName.trim()) {
@@ -321,64 +384,226 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
                   </FormControl>
                 </Grid>
 
-                {/* Version Strategy Section */}
+                {/* Compare Button */}
                 <Grid item xs={12}>
                   <Divider sx={{ my: 2 }} />
-                  <Typography variant="subtitle2" gutterBottom fontWeight="bold">
-                    Version Selection
-                  </Typography>
-                </Grid>
-
-                <Grid item xs={12}>
-                  <FormControl component="fieldset">
-                    <FormLabel component="legend">Version Strategy</FormLabel>
-                    <RadioGroup
-                      value={versionStrategy}
-                      onChange={(e) => setVersionStrategy(e.target.value as VersionStrategy)}
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                    <Button
+                      variant="contained"
+                      onClick={handleCompare}
+                      disabled={compareMutation.isPending || selectedShots.length === 0 || selectedDepartments.length === 0}
                     >
-                      <FormControlLabel
-                        value="latest"
-                        control={<Radio />}
-                        label={
-                          <Box>
-                            <Typography variant="body2" fontWeight="bold">
-                              {VERSION_STRATEGY_LABELS.latest}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Download the newest version of each shot (Recommended)
-                            </Typography>
-                          </Box>
-                        }
-                      />
-                      <FormControlLabel
-                        value="specific"
-                        control={<Radio />}
-                        label={
-                          <Box>
-                            <Typography variant="body2" fontWeight="bold">
-                              {VERSION_STRATEGY_LABELS.specific}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              Try to download the same version for all shots
-                            </Typography>
-                          </Box>
-                        }
-                      />
-                    </RadioGroup>
-                  </FormControl>
+                      {compareMutation.isPending ? 'Comparing...' : 'Compare & Check Versions'}
+                    </Button>
+                    <Typography variant="caption" color="text.secondary">
+                      Click to scan available versions for selected shots
+                    </Typography>
+                  </Box>
                 </Grid>
 
-                {versionStrategy === 'specific' && (
-                  <Grid item xs={12}>
-                    <TextField
-                      fullWidth
-                      label="Version Number"
-                      value={specificVersion}
-                      onChange={(e) => setSpecificVersion(e.target.value)}
-                      placeholder="e.g., v005"
-                      helperText="Enter the version to download (e.g., v001, v002, v005). Shots without this version will be skipped."
-                    />
-                  </Grid>
+                {/* Comparison Results Table */}
+                {showComparison && comparisonResults.length > 0 && (
+                  <>
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 2 }} />
+                      <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+                        Available Versions ({comparisonResults.length} items)
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <TableContainer component={Paper} sx={{ maxHeight: 400 }}>
+                        <Table size="small" stickyHeader>
+                          <TableHead>
+                            <TableRow>
+                              <TableCell>Shot</TableCell>
+                              <TableCell>Department</TableCell>
+                              <TableCell>Latest Version</TableCell>
+                              <TableCell>Available Versions</TableCell>
+                              <TableCell>Status</TableCell>
+                            </TableRow>
+                          </TableHead>
+                          <TableBody>
+                            {comparisonResults.map((item, index) => {
+                              const shotKey = `${item.episode}|${item.sequence}|${item.shot}|${item.department}`;
+                              return (
+                                <TableRow key={index}>
+                                  <TableCell>
+                                    <Typography variant="body2" fontFamily="monospace">
+                                      {item.episode}/{item.sequence}/{item.shot}
+                                    </Typography>
+                                  </TableCell>
+                                  <TableCell>{item.department}</TableCell>
+                                  <TableCell>
+                                    <Chip
+                                      label={item.latest_version || 'N/A'}
+                                      size="small"
+                                      color="primary"
+                                    />
+                                  </TableCell>
+                                  <TableCell>
+                                    <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                                      {item.available_versions && item.available_versions.length > 0 ? (
+                                        item.available_versions.map((v) => (
+                                          <Chip key={v} label={v} size="small" variant="outlined" />
+                                        ))
+                                      ) : (
+                                        <Typography variant="caption" color="text.secondary">None</Typography>
+                                      )}
+                                    </Box>
+                                  </TableCell>
+                                  <TableCell>
+                                    <Chip
+                                      label={item.status}
+                                      size="small"
+                                      color={item.status === 'error' ? 'error' : 'default'}
+                                    />
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                          </TableBody>
+                        </Table>
+                      </TableContainer>
+                    </Grid>
+
+                    {/* Version Strategy Section */}
+                    <Grid item xs={12}>
+                      <Divider sx={{ my: 2 }} />
+                      <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+                        Version Selection Strategy
+                      </Typography>
+                    </Grid>
+
+                    <Grid item xs={12}>
+                      <FormControl component="fieldset">
+                        <FormLabel component="legend">How to select versions?</FormLabel>
+                        <RadioGroup
+                          value={versionStrategy}
+                          onChange={(e) => {
+                            const newStrategy = e.target.value as VersionStrategy;
+                            setVersionStrategy(newStrategy);
+                            if (newStrategy !== 'custom') {
+                              setCustomVersions({});
+                            }
+                          }}
+                        >
+                          <FormControlLabel
+                            value="latest"
+                            control={<Radio />}
+                            label={
+                              <Box>
+                                <Typography variant="body2" fontWeight="bold">
+                                  {VERSION_STRATEGY_LABELS.latest}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Download the newest version of each shot (Recommended)
+                                </Typography>
+                              </Box>
+                            }
+                          />
+                          <FormControlLabel
+                            value="specific"
+                            control={<Radio />}
+                            label={
+                              <Box>
+                                <Typography variant="body2" fontWeight="bold">
+                                  {VERSION_STRATEGY_LABELS.specific}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Try to download the same version for all shots
+                                </Typography>
+                              </Box>
+                            }
+                          />
+                          <FormControlLabel
+                            value="custom"
+                            control={<Radio />}
+                            label={
+                              <Box>
+                                <Typography variant="body2" fontWeight="bold">
+                                  {VERSION_STRATEGY_LABELS.custom}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                  Select version individually for each shot
+                                </Typography>
+                              </Box>
+                            }
+                          />
+                        </RadioGroup>
+                      </FormControl>
+                    </Grid>
+
+                    {versionStrategy === 'specific' && (
+                      <Grid item xs={12}>
+                        <FormControl fullWidth>
+                          <InputLabel>Select Version</InputLabel>
+                          <Select
+                            value={specificVersion}
+                            onChange={(e) => setSpecificVersion(e.target.value)}
+                            label="Select Version"
+                          >
+                            {/* Get unique versions from all comparison results */}
+                            {Array.from(new Set(
+                              comparisonResults.flatMap(item => item.available_versions || [])
+                            )).sort().reverse().map((version) => (
+                              <MenuItem key={version} value={version}>{version}</MenuItem>
+                            ))}
+                          </Select>
+                        </FormControl>
+                      </Grid>
+                    )}
+
+                    {versionStrategy === 'custom' && (
+                      <Grid item xs={12}>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                          Select version for each shot:
+                        </Typography>
+                        <TableContainer component={Paper} sx={{ maxHeight: 300 }}>
+                          <Table size="small" stickyHeader>
+                            <TableHead>
+                              <TableRow>
+                                <TableCell>Shot</TableCell>
+                                <TableCell>Department</TableCell>
+                                <TableCell>Select Version</TableCell>
+                              </TableRow>
+                            </TableHead>
+                            <TableBody>
+                              {comparisonResults.map((item, index) => {
+                                const shotKey = `${item.episode}|${item.sequence}|${item.shot}|${item.department}`;
+                                return (
+                                  <TableRow key={index}>
+                                    <TableCell>
+                                      <Typography variant="body2" fontFamily="monospace">
+                                        {item.episode}/{item.sequence}/{item.shot}
+                                      </Typography>
+                                    </TableCell>
+                                    <TableCell>{item.department}</TableCell>
+                                    <TableCell>
+                                      <Select
+                                        size="small"
+                                        value={customVersions[shotKey] || item.latest_version || ''}
+                                        onChange={(e) => handleCustomVersionChange(shotKey, e.target.value)}
+                                        sx={{ minWidth: 120 }}
+                                      >
+                                        {item.available_versions && item.available_versions.length > 0 ? (
+                                          item.available_versions.map((v) => (
+                                            <MenuItem key={v} value={v}>{v}</MenuItem>
+                                          ))
+                                        ) : (
+                                          <MenuItem disabled>No versions</MenuItem>
+                                        )}
+                                      </Select>
+                                    </TableCell>
+                                  </TableRow>
+                                );
+                              })}
+                            </TableBody>
+                          </Table>
+                        </TableContainer>
+                      </Grid>
+                    )}
+                  </>
                 )}
 
                 {/* Conflict Strategy Section */}

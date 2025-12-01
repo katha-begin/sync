@@ -37,7 +37,10 @@ class ShotService {
     return api.post<ScanResult>(
       `${this.basePath}/structure/${endpointId}/scan`,
       {},
-      { params: { force_refresh: forceRefresh } }
+      {
+        params: { force_refresh: forceRefresh },
+        timeout: 300000 // 5 minutes for structure scan (takes ~2.5 minutes)
+      }
     );
   }
 
