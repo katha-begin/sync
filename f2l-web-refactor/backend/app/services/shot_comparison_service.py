@@ -232,7 +232,8 @@ class ShotComparisonService:
         """List all available animation versions."""
         import asyncio
 
-        publish_path = f"{paths.anim_path}/publish"
+        # paths.ftp_path already includes /anim/publish
+        publish_path = paths.ftp_path
 
         try:
             loop = asyncio.get_event_loop()
@@ -259,7 +260,8 @@ class ShotComparisonService:
         """List all available lighting versions."""
         import asyncio
 
-        version_path = f"{paths.lighting_path}/version"
+        # paths.ftp_path already includes /lighting/version
+        version_path = paths.ftp_path
 
         try:
             loop = asyncio.get_event_loop()
