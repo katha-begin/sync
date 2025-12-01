@@ -297,8 +297,16 @@ class ShotDownloadService:
         )
         ftp_manager = FTPManager(ftp_config)
 
+        # If path is relative, join with /mnt (the base mount point)
+        import os
+        local_path = endpoint['local_path']
+        if not local_path.startswith('/'):
+            full_path = os.path.join('/mnt', local_path)
+        else:
+            full_path = local_path
+
         # Create Local manager
-        local_config = LocalConfig(base_path=endpoint['local_path'])
+        local_config = LocalConfig(base_path=full_path)
         local_manager = LocalManager(local_config)
 
         try:
