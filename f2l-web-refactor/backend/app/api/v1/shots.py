@@ -240,6 +240,8 @@ async def compare_shots(
                     "department": comparison.department,
                     "ftp_version": comparison.ftp_version,
                     "local_version": comparison.local_version,
+                    "available_versions": comparison.available_versions,  # Added
+                    "latest_version": comparison.latest_version,  # Added
                     "needs_update": comparison.needs_update,
                     "status": comparison.status,
                     "file_count": comparison.file_count,
