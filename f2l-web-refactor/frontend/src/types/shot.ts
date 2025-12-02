@@ -63,7 +63,7 @@ export interface CreateTaskRequest {
   departments: string[];
   version_strategy?: VersionStrategy;
   specific_version?: string;
-  custom_versions?: Record<string, string>;  // Map of "shot-department" to version
+  custom_versions?: Record<string, string[]>;  // Map of "shot-department" to versions array
   conflict_strategy?: ConflictStrategy;
   notes?: string;
   created_by?: string;

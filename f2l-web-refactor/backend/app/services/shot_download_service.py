@@ -56,7 +56,7 @@ class ShotDownloadService:
         departments: List[str],
         version_strategy: str = 'latest',
         specific_version: Optional[str] = None,
-        custom_versions: Optional[Dict[str, str]] = None,
+        custom_versions: Optional[Dict[str, any]] = None,  # Can be str or List[str]
         conflict_strategy: str = 'skip',
         created_by: Optional[str] = None,
         notes: Optional[str] = None
@@ -115,39 +115,59 @@ class ShotDownloadService:
                     shot=shot["shot"],
                     department=department
                 )
-                
-                # Only add if needs update
-                if comparison.needs_update:
-                    # Determine selected version for custom strategy
-                    selected_version = None
-                    if version_strategy == 'custom' and custom_versions:
-                        shot_key = f"{comparison.shot}-{comparison.department}"
-                        selected_version = custom_versions.get(shot_key, comparison.latest_version)
 
-                    item = ShotDownloadItem(
-                        id=uuid4(),
-                        task_id=task.id,
-                        episode=comparison.episode,
-                        sequence=comparison.sequence,
-                        shot=comparison.shot,
-                        department=comparison.department,
-                        ftp_version=comparison.ftp_version,
-                        local_version=comparison.local_version,
-                        selected_version=selected_version,
-                        available_versions=comparison.available_versions,
-                        latest_version=comparison.latest_version,
-                        ftp_path=comparison.ftp_path,
-                        local_path=comparison.local_path,
-                        status=ShotDownloadItemStatus.PENDING,
-                        file_count=comparison.file_count,
-                        total_size=comparison.total_size,
-                        downloaded_size=0,
-                        files_skipped=0,
-                        files_overwritten=0,
-                        files_kept_both=0
-                    )
-                    items_to_create.append(item)
-                    total_size += comparison.total_size
+                # Only add if FTP has content (comparison has available versions)
+                if comparison.needs_update or (comparison.available_versions and len(comparison.available_versions) > 0):
+                    # Determine versions to download for custom strategy
+                    versions_to_download = []
+
+                    if version_strategy == 'custom' and custom_versions:
+                        # Use the new key format: episode|sequence|shot|department
+                        shot_key = f"{comparison.episode}|{comparison.sequence}|{comparison.shot}|{comparison.department}"
+                        custom_value = custom_versions.get(shot_key)
+
+                        if custom_value:
+                            # Handle both single version (string) and multiple versions (list)
+                            if isinstance(custom_value, list):
+                                versions_to_download = custom_value
+                            else:
+                                versions_to_download = [custom_value]
+                        else:
+                            # Fallback to latest if no custom selection
+                            versions_to_download = [comparison.latest_version] if comparison.latest_version else []
+                    else:
+                        # Non-custom strategy: single version
+                        versions_to_download = [comparison.latest_version] if comparison.latest_version else []
+
+                    # Create one item per version to download
+                    for version in versions_to_download:
+                        if not version:
+                            continue
+
+                        item = ShotDownloadItem(
+                            id=uuid4(),
+                            task_id=task.id,
+                            episode=comparison.episode,
+                            sequence=comparison.sequence,
+                            shot=comparison.shot,
+                            department=comparison.department,
+                            ftp_version=comparison.ftp_version,
+                            local_version=comparison.local_version,
+                            selected_version=version,  # The specific version for this item
+                            available_versions=comparison.available_versions,
+                            latest_version=comparison.latest_version,
+                            ftp_path=comparison.ftp_path,
+                            local_path=comparison.local_path,
+                            status=ShotDownloadItemStatus.PENDING,
+                            file_count=comparison.file_count,
+                            total_size=comparison.total_size,
+                            downloaded_size=0,
+                            files_skipped=0,
+                            files_overwritten=0,
+                            files_kept_both=0
+                        )
+                        items_to_create.append(item)
+                        total_size += comparison.total_size
         
         # Update task totals
         task.total_items = len(items_to_create)
@@ -477,8 +497,9 @@ class ShotDownloadService:
         local_manager: LocalManager,
         item: ShotDownloadItem
     ):
-        """Download lighting files with conflict handling."""
+        """Download lighting files with version selection and conflict handling."""
         import os
+        import re
 
         # Convert relative local path to absolute path
         local_path = item.local_path
@@ -497,14 +518,29 @@ class ShotDownloadService:
             department=item.department
         )
 
-        logger.info(f"Downloading {len(comparison.files_to_download)} lighting files")
+        # Get the selected version for this item
+        selected_version = item.selected_version
+
+        # Filter files by selected version if custom strategy
+        files_to_download = comparison.files_to_download
+        if selected_version and item.task.version_strategy == 'custom':
+            # Filter to only files matching the selected version
+            # Version pattern in filename: _v001, _v002, etc.
+            version_pattern = f"_{selected_version}"
+            files_to_download = [
+                f for f in files_to_download
+                if version_pattern in f.get('name', '')
+            ]
+            logger.info(f"Filtered to {len(files_to_download)} files for version {selected_version}")
+
+        logger.info(f"Downloading {len(files_to_download)} lighting files")
 
         # Get conflict strategy
         conflict_strategy = item.task.conflict_strategy
 
         # Download each file with conflict handling
         loop = asyncio.get_event_loop()
-        for file_info in comparison.files_to_download:
+        for file_info in files_to_download:
             remote_file = f"{item.ftp_path}/{file_info['name']}"
             local_file = os.path.join(local_path, file_info['name'])
 

@@ -63,7 +63,7 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['anim', 'lighting']);
   const [versionStrategy, setVersionStrategy] = useState<VersionStrategy>('latest');
   const [specificVersion, setSpecificVersion] = useState('');
-  const [customVersions, setCustomVersions] = useState<Record<string, string>>({});
+  const [customVersions, setCustomVersions] = useState<Record<string, string[]>>({});
   const [conflictStrategy, setConflictStrategy] = useState<ConflictStrategy>('skip');
   const [error, setError] = useState<string | null>(null);
   const [comparisonResults, setComparisonResults] = useState<ShotComparison[]>([]);
@@ -210,10 +210,38 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
     compareMutation.mutate();
   };
 
-  const handleCustomVersionChange = (shotKey: string, version: string) => {
+  const handleCustomVersionToggle = (shotKey: string, version: string) => {
+    setCustomVersions(prev => {
+      const currentVersions = prev[shotKey] || [];
+      const isSelected = currentVersions.includes(version);
+
+      if (isSelected) {
+        // Remove version
+        return {
+          ...prev,
+          [shotKey]: currentVersions.filter(v => v !== version),
+        };
+      } else {
+        // Add version
+        return {
+          ...prev,
+          [shotKey]: [...currentVersions, version].sort(),
+        };
+      }
+    });
+  };
+
+  const handleSelectAllVersions = (shotKey: string, versions: string[]) => {
     setCustomVersions(prev => ({
       ...prev,
-      [shotKey]: version,
+      [shotKey]: [...versions].sort(),
+    }));
+  };
+
+  const handleClearVersions = (shotKey: string) => {
+    setCustomVersions(prev => ({
+      ...prev,
+      [shotKey]: [],
     }));
   };
 
@@ -564,12 +592,14 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
                               <TableRow>
                                 <TableCell>Shot</TableCell>
                                 <TableCell>Department</TableCell>
-                                <TableCell>Select Version</TableCell>
+                                <TableCell>Select Versions (click to toggle)</TableCell>
                               </TableRow>
                             </TableHead>
                             <TableBody>
                               {comparisonResults.map((item, index) => {
                                 const shotKey = `${item.episode}|${item.sequence}|${item.shot}|${item.department}`;
+                                const selectedVersions = customVersions[shotKey] || [];
+                                const hasSelection = selectedVersions.length > 0;
                                 return (
                                   <TableRow key={index}>
                                     <TableCell>
@@ -579,20 +609,54 @@ const CreateTaskDialog: React.FC<CreateTaskDialogProps> = ({ open, onClose, onSu
                                     </TableCell>
                                     <TableCell>{item.department}</TableCell>
                                     <TableCell>
-                                      <Select
-                                        size="small"
-                                        value={customVersions[shotKey] || item.latest_version || ''}
-                                        onChange={(e) => handleCustomVersionChange(shotKey, e.target.value)}
-                                        sx={{ minWidth: 120 }}
-                                      >
+                                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5, alignItems: 'center' }}>
                                         {item.available_versions && item.available_versions.length > 0 ? (
-                                          item.available_versions.map((v) => (
-                                            <MenuItem key={v} value={v}>{v}</MenuItem>
-                                          ))
+                                          <>
+                                            {item.available_versions.map((v) => {
+                                              const isSelected = selectedVersions.includes(v);
+                                              const isLatest = v === item.latest_version;
+                                              return (
+                                                <Chip
+                                                  key={v}
+                                                  label={isLatest ? `${v} (latest)` : v}
+                                                  size="small"
+                                                  onClick={() => handleCustomVersionToggle(shotKey, v)}
+                                                  color={isSelected ? 'primary' : 'default'}
+                                                  variant={isSelected ? 'filled' : 'outlined'}
+                                                  sx={{
+                                                    cursor: 'pointer',
+                                                    fontWeight: isLatest ? 'bold' : 'normal',
+                                                  }}
+                                                />
+                                              );
+                                            })}
+                                            <Box sx={{ ml: 1, display: 'flex', gap: 0.5 }}>
+                                              <Chip
+                                                label="All"
+                                                size="small"
+                                                onClick={() => handleSelectAllVersions(shotKey, item.available_versions || [])}
+                                                color="secondary"
+                                                variant="outlined"
+                                                sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                                              />
+                                              {hasSelection && (
+                                                <Chip
+                                                  label="Clear"
+                                                  size="small"
+                                                  onClick={() => handleClearVersions(shotKey)}
+                                                  color="error"
+                                                  variant="outlined"
+                                                  sx={{ cursor: 'pointer', fontSize: '0.7rem' }}
+                                                />
+                                              )}
+                                            </Box>
+                                          </>
                                         ) : (
-                                          <MenuItem disabled>No versions</MenuItem>
+                                          <Typography variant="body2" color="text.secondary">
+                                            No versions available
+                                          </Typography>
                                         )}
-                                      </Select>
+                                      </Box>
                                     </TableCell>
                                   </TableRow>
                                 );
