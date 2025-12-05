@@ -5,7 +5,7 @@ export * from './session';
 export * from './execution';
 export * from './shot';
 // Export upload types except ShotSelection (already exported from shot.ts)
-export {
+export type {
   LocalFile,
   LocalDepartment,
   LocalShot,
@@ -25,6 +25,8 @@ export {
   UploadTaskDetails,
   UploadHistoryItem,
   UploadHistoryResponse,
+} from './upload';
+export {
   UPLOAD_TASK_STATUS_LABELS,
   UPLOAD_ITEM_STATUS_LABELS,
   UPLOAD_TASK_STATUS_COLORS,
