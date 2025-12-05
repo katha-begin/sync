@@ -12,7 +12,7 @@ import logging
 import time
 
 from app.config import settings
-from app.api.v1 import endpoints, sessions, executions, logs, settings as settings_api, auth, browse, shots
+from app.api.v1 import endpoints, sessions, executions, logs, settings as settings_api, auth, browse, shots, uploads
 
 # Configure logging
 logging.basicConfig(
@@ -173,6 +173,12 @@ app.include_router(
     shots.router,
     prefix=f"{settings.API_V1_PREFIX}/shots",
     tags=["shots"]
+)
+
+app.include_router(
+    uploads.router,
+    prefix=f"{settings.API_V1_PREFIX}/uploads",
+    tags=["uploads"]
 )
 
 
