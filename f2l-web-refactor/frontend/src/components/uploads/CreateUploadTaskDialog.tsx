@@ -28,7 +28,6 @@ import {
   RadioGroup,
   FormLabel,
   Collapse,
-  LinearProgress,
   Grid,
   Chip,
 } from '@mui/material';
