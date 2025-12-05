@@ -56,7 +56,7 @@ const UploadTaskDetailDialog: React.FC<UploadTaskDetailDialogProps> = ({ open, t
     queryKey: ['upload-task-detail', taskId],
     queryFn: () => uploadService.getTask(taskId!),
     enabled: open && !!taskId,
-    refetchInterval: (data) => data?.status === 'running' ? 2000 : false,
+    refetchInterval: (query) => query.state.data?.status === 'running' ? 2000 : false,
   });
 
   const toggleRow = (id: string) => {
@@ -119,7 +119,7 @@ const UploadTaskDetailDialog: React.FC<UploadTaskDetailDialogProps> = ({ open, t
                 </Box>
                 <Box>
                   <Typography variant="caption" color="text.secondary">Created</Typography>
-                  <Typography>{formatDate(task.created_at)}</Typography>
+                  <Typography>{task.created_at ? formatDate(task.created_at) : '-'}</Typography>
                 </Box>
               </Box>
             </Paper>
