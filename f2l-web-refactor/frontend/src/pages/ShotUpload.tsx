@@ -58,11 +58,17 @@ const ShotUpload: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  // Fetch upload tasks
+  // Fetch upload tasks (all tasks, then filter client-side)
   const { data: tasksData, isLoading: tasksLoading, refetch: refetchTasks } = useQuery({
     queryKey: ['upload-tasks'],
     queryFn: () => uploadService.listTasks(),
+    refetchInterval: 5000, // Auto-refresh every 5s to catch status changes
   });
+
+  // Filter tasks: Active tab shows only pending/running, completed/failed/cancelled go to history
+  const activeTasks = tasksData?.tasks?.filter(
+    (task) => task.status === 'pending' || task.status === 'running'
+  ) || [];
 
   // Fetch upload history
   const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
@@ -95,7 +101,7 @@ const ShotUpload: React.FC = () => {
     onError: (err: any) => setError(err.message || 'Failed to retry task'),
   });
 
-  const tasks = tasksData?.tasks || [];
+  const tasks = activeTasks;  // Only pending/running tasks
   const history = historyData?.history || [];
 
   // Task columns
@@ -235,8 +241,8 @@ const ShotUpload: React.FC = () => {
 
       <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
         <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)}>
-          <Tab icon={<UploadIcon />} iconPosition="start" label={`Upload Tasks (${tasks.length})`} />
-          <Tab icon={<HistoryIcon />} iconPosition="start" label="Upload History" />
+          <Tab icon={<UploadIcon />} iconPosition="start" label={`Active Tasks (${tasks.length})`} />
+          <Tab icon={<HistoryIcon />} iconPosition="start" label={`History (${history.length})`} />
         </Tabs>
       </Box>
 
