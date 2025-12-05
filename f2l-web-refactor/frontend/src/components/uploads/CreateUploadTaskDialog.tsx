@@ -78,10 +78,11 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
   const [conflictStrategy, setConflictStrategy] = useState<UploadConflictStrategy>('skip');
   const [error, setError] = useState<string | null>(null);
 
-  // Episode/Sequence/Shot filter state
+  // Episode/Sequence/Shot/Department filter state
   const [selectedEpisodes, setSelectedEpisodes] = useState<string[]>([]);
   const [selectedSequences, setSelectedSequences] = useState<string[]>([]);
   const [selectedShots, setSelectedShots] = useState<string[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
 
   // Structure navigation state (for file tree expansion)
   const [expandedEpisodes, setExpandedEpisodes] = useState<Set<string>>(new Set());
@@ -153,12 +154,37 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     return shots;
   }, [structure, selectedEpisodes, selectedSequences]);
 
-  // Filter the structure to only show selected shots in the file tree
+  // Compute available departments based on selected shots
+  const availableDepartments = useMemo(() => {
+    if (!structure?.episodes || selectedShots.length === 0) return [];
+    const selectedShotSet = new Set(selectedShots);
+    const departmentSet = new Set<string>();
+
+    structure.episodes
+      .filter((ep: LocalEpisode) => selectedEpisodes.includes(ep.name))
+      .forEach((ep: LocalEpisode) => {
+        ep.sequences
+          ?.filter((seq: LocalSequence) => selectedSequences.includes(seq.name))
+          .forEach((seq: LocalSequence) => {
+            seq.shots
+              ?.filter((shot: LocalShot) => selectedShotSet.has(`${ep.name}|${seq.name}|${shot.name}`))
+              .forEach((shot: LocalShot) => {
+                shot.departments?.forEach((dept) => {
+                  departmentSet.add(dept.name);
+                });
+              });
+          });
+      });
+    return Array.from(departmentSet).sort();
+  }, [structure, selectedEpisodes, selectedSequences, selectedShots]);
+
+  // Filter the structure to only show selected shots and departments in the file tree
   const filteredStructure = useMemo(() => {
     if (!structure?.episodes || selectedShots.length === 0) return null;
 
     // Parse selected shot keys (format: "episode|sequence|shot")
     const selectedShotSet = new Set(selectedShots);
+    const filterByDepartment = selectedDepartments.length > 0;
 
     const filteredEpisodes = structure.episodes
       .filter((ep: LocalEpisode) => selectedEpisodes.includes(ep.name))
@@ -168,16 +194,22 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
           ?.filter((seq: LocalSequence) => selectedSequences.includes(seq.name))
           .map((seq: LocalSequence) => ({
             ...seq,
-            shots: seq.shots?.filter((shot: LocalShot) =>
-              selectedShotSet.has(`${ep.name}|${seq.name}|${shot.name}`)
-            ),
+            shots: seq.shots
+              ?.filter((shot: LocalShot) => selectedShotSet.has(`${ep.name}|${seq.name}|${shot.name}`))
+              .map((shot: LocalShot) => ({
+                ...shot,
+                departments: filterByDepartment
+                  ? shot.departments?.filter((dept) => selectedDepartments.includes(dept.name))
+                  : shot.departments,
+              }))
+              .filter((shot: LocalShot) => shot.departments && shot.departments.length > 0),
           }))
           .filter((seq: LocalSequence) => seq.shots && seq.shots.length > 0),
       }))
       .filter((ep: LocalEpisode) => ep.sequences && ep.sequences.length > 0);
 
     return { episodes: filteredEpisodes };
-  }, [structure, selectedEpisodes, selectedSequences, selectedShots]);
+  }, [structure, selectedEpisodes, selectedSequences, selectedShots, selectedDepartments]);
 
   // Create task mutation
   const createTaskMutation = useMutation({
@@ -201,6 +233,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     setSelectedEpisodes([]);
     setSelectedSequences([]);
     setSelectedShots([]);
+    setSelectedDepartments([]);
     setUploadQueue([]);
     setExpandedEpisodes(new Set());
     setExpandedSequences(new Set());
@@ -408,7 +441,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
 
           {selectedEndpoint && !structureLoading && structure && (
             <Grid container spacing={2} sx={{ mb: 2 }}>
-              <Grid item xs={12} sm={4}>
+              <Grid item xs={12} sm={3}>
                 <FormControl fullWidth size="small">
                   <InputLabel>Episodes</InputLabel>
                   <Select
@@ -418,6 +451,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                       setSelectedEpisodes(e.target.value as string[]);
                       setSelectedSequences([]);
                       setSelectedShots([]);
+                      setSelectedDepartments([]);
                     }}
                     label="Episodes"
                     renderValue={(selected) => (
@@ -435,7 +469,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                 </FormControl>
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid item xs={12} sm={3}>
                 <FormControl fullWidth size="small" disabled={selectedEpisodes.length === 0}>
                   <InputLabel>Sequences</InputLabel>
                   <Select
@@ -444,6 +478,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                     onChange={(e) => {
                       setSelectedSequences(e.target.value as string[]);
                       setSelectedShots([]);
+                      setSelectedDepartments([]);
                     }}
                     label="Sequences"
                     renderValue={(selected) => (
@@ -463,13 +498,16 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                 </FormControl>
               </Grid>
 
-              <Grid item xs={12} sm={4}>
+              <Grid item xs={12} sm={3}>
                 <FormControl fullWidth size="small" disabled={selectedSequences.length === 0}>
                   <InputLabel>Shots</InputLabel>
                   <Select
                     multiple
                     value={selectedShots}
-                    onChange={(e) => setSelectedShots(e.target.value as string[])}
+                    onChange={(e) => {
+                      setSelectedShots(e.target.value as string[]);
+                      setSelectedDepartments([]);
+                    }}
                     label="Shots"
                     renderValue={(selected) => (
                       <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
@@ -488,6 +526,29 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                         </MenuItem>
                       );
                     })}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={3}>
+                <FormControl fullWidth size="small" disabled={selectedShots.length === 0}>
+                  <InputLabel>Departments</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedDepartments}
+                    onChange={(e) => setSelectedDepartments(e.target.value as string[])}
+                    label="Departments"
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {availableDepartments.map((dept) => (
+                      <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                    ))}
                   </Select>
                 </FormControl>
               </Grid>
