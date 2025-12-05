@@ -369,15 +369,17 @@ class ShotUploadService:
 
             endpoint_name = endpoint['name']
             endpoint_type = endpoint['endpoint_type']
+            # remote_path is used for building target paths, not for FTPConfig/SFTPConfig
+            remote_base_path = endpoint['remote_path'] or "/"
 
             # Create target manager (FTP or SFTP)
+            # Note: FTPConfig/SFTPConfig don't have remote_path - that's handled separately
             if endpoint_type == EndpointType.FTP:
                 ftp_config = FTPConfig(
                     host=endpoint['host'],
                     port=endpoint['port'] or 21,
                     username=endpoint['username'],
-                    password=endpoint.get('password'),
-                    remote_path=endpoint['remote_path'] or "/"
+                    password=endpoint.get('password')
                 )
                 ftp_manager = FTPManager(ftp_config)
                 ftp_manager.connect()
@@ -386,8 +388,7 @@ class ShotUploadService:
                     host=endpoint['host'],
                     port=endpoint['port'] or 22,
                     username=endpoint['username'],
-                    password=endpoint.get('password'),
-                    remote_path=endpoint['remote_path'] or "/"
+                    password=endpoint.get('password')
                 )
                 sftp_manager = SFTPManager(sftp_config)
                 sftp_manager.connect()
