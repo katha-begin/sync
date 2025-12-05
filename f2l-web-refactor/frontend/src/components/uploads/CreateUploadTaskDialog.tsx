@@ -99,7 +99,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
   // Filter endpoints that have both local_path and remote_path configured (for upload)
   // These are typically FTP/SFTP endpoints that also have local_path set
   const uploadableEndpoints = endpoints.filter((e: any) =>
-    e.local_path && e.remote_path && ['ftp', 'sftp'].includes(e.type)
+    e.local_path && e.remote_path && ['ftp', 'sftp'].includes(e.endpoint_type)
   );
 
   // Fetch local structure using selected endpoint's local_path
@@ -309,7 +309,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
               ) : (
                 uploadableEndpoints.map((ep: any) => (
                   <MenuItem key={ep.id} value={ep.id}>
-                    {ep.name} ({ep.type.toUpperCase()})
+                    {ep.name} ({ep.endpoint_type?.toUpperCase()})
                   </MenuItem>
                 ))
               )}
