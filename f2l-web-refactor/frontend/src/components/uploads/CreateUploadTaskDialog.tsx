@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -14,7 +14,6 @@ import {
   FormControl,
   InputLabel,
   Select,
-  Chip,
   Divider,
   Paper,
   List,
@@ -22,7 +21,6 @@ import {
   ListItemButton,
   ListItemText,
   ListItemIcon,
-  Checkbox,
   IconButton,
   Tooltip,
   FormControlLabel,
@@ -36,11 +34,8 @@ import {
   Add as AddIcon,
   Remove as RemoveIcon,
   ExpandMore as ExpandIcon,
-  ExpandLess as CollapseIcon,
   Folder as FolderIcon,
   VideoFile as FileIcon,
-  Delete as DeleteIcon,
-  SelectAll as SelectAllIcon,
   ClearAll as ClearAllIcon,
   ChevronRight as ChevronRightIcon,
 } from '@mui/icons-material';
@@ -48,7 +43,6 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { endpointService } from '@/services/endpointService';
 import { uploadService } from '@/services/uploadService';
 import {
-  LocalStructure,
   LocalEpisode,
   LocalSequence,
   LocalShot,
@@ -59,7 +53,9 @@ import {
   UPLOAD_CONFLICT_STRATEGY_LABELS,
   formatBytes,
 } from '@/types/upload';
-import { v4 as uuidv4 } from 'uuid';
+
+// Simple unique ID generator (replaces uuid)
+const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 interface CreateUploadTaskDialogProps {
   open: boolean;
@@ -194,7 +190,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
 
     if (!exists) {
       const newItem: UploadQueueItem = {
-        id: uuidv4(),
+        id: generateId(),
         episode,
         sequence,
         shot,
