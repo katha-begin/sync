@@ -346,9 +346,9 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
               {structureLoading && <LinearProgress sx={{ mt: 1 }} />}
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto' }}>
-              {!sourceEndpoint ? (
+              {!selectedEndpoint ? (
                 <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                  Select a source endpoint to browse files
+                  Select an endpoint to browse files
                 </Box>
               ) : structureLoading ? (
                 <Box sx={{ p: 2, textAlign: 'center' }}>
