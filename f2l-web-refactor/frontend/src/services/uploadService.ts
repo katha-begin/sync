@@ -47,6 +47,11 @@ class UploadService {
     return api.get<UploadTaskDetails>(`${this.basePath}/tasks/${taskId}`);
   }
 
+  // Alias for backward compatibility
+  async getTask(taskId: string): Promise<UploadTaskDetails> {
+    return this.getTaskDetails(taskId);
+  }
+
   async executeTask(taskId: string): Promise<any> {
     return api.post(`${this.basePath}/tasks/${taskId}/execute`);
   }

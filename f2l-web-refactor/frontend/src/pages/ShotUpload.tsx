@@ -20,10 +20,12 @@ import {
   Delete as DeleteIcon,
   Cancel as CancelIcon,
   Replay as RetryIcon,
+  Visibility as ViewIcon,
 } from '@mui/icons-material';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { uploadService } from '@/services/uploadService';
 import CreateUploadTaskDialog from '@/components/uploads/CreateUploadTaskDialog';
+import UploadTaskDetailDialog from '@/components/uploads/UploadTaskDetailDialog';
 import DataTable from '@/components/common/DataTable';
 import { TableColumn } from '@/types';
 import { formatDate, formatBytes } from '@/utils/formatters';
@@ -52,6 +54,7 @@ function TabPanel(props: TabPanelProps) {
 const ShotUpload: React.FC = () => {
   const [tabValue, setTabValue] = useState(0);
   const [createDialogOpen, setCreateDialogOpen] = useState(false);
+  const [detailTaskId, setDetailTaskId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
@@ -122,9 +125,14 @@ const ShotUpload: React.FC = () => {
       render: (value) => formatDate(value as string),
     },
     {
-      id: 'actions', label: 'Actions', minWidth: 150, align: 'center',
+      id: 'actions', label: 'Actions', minWidth: 180, align: 'center',
       render: (_, row) => (
         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+          <Tooltip title="View Details">
+            <IconButton size="small" onClick={() => setDetailTaskId(row.id)} color="default">
+              <ViewIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
           {row.status === 'pending' && (
             <Tooltip title="Execute">
               <IconButton size="small" onClick={() => executeMutation.mutate(row.id)} color="primary">
@@ -237,6 +245,12 @@ const ShotUpload: React.FC = () => {
         open={createDialogOpen}
         onClose={() => setCreateDialogOpen(false)}
         onSuccess={() => { refetchTasks(); setCreateDialogOpen(false); }}
+      />
+
+      <UploadTaskDetailDialog
+        open={!!detailTaskId}
+        taskId={detailTaskId}
+        onClose={() => setDetailTaskId(null)}
       />
     </Box>
   );

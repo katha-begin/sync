@@ -249,6 +249,11 @@ class ShotUploadService:
         source_root = endpoint.local_path
         target_root = endpoint.remote_path
 
+        # If source_root is relative, add /mnt prefix (same as scan_local_structure)
+        # This ensures we match the paths that come from the frontend (which use scanned paths)
+        if not source_root.startswith('/'):
+            source_root = os.path.join('/mnt', source_root)
+
         # Create task - single endpoint_id (stores both source and target info)
         task = ShotUploadTask(
             id=uuid4(),
