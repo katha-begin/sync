@@ -22,8 +22,15 @@ class UploadService {
     if (episode) params.episode = episode;
     if (sequence) params.sequence = sequence;
     if (department) params.department = department;
-    
+
     return api.get<LocalStructure>(`${this.basePath}/structure/${endpointId}`, params);
+  }
+
+  // Trigger a scan of local structure
+  async scanLocalStructure(endpointId: string, forceRefresh: boolean = false): Promise<any> {
+    return api.post(`${this.basePath}/structure/${endpointId}/scan`, null, {
+      params: { force_refresh: forceRefresh }
+    });
   }
 
   // Task Management

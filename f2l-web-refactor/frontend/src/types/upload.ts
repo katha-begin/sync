@@ -33,7 +33,19 @@ export interface LocalEpisode {
   sequences: LocalSequence[];
 }
 
+// Structure response - matches download pattern
 export interface LocalStructure {
+  endpoint_id: string;
+  endpoint_name: string;
+  root_path: string;
+  episodes: string[];  // List of episode names
+  sequences: { episode: string; sequence: string }[];  // List of sequences with episode
+  shots: { episode: string; sequence: string; shot: string }[];  // List of shots
+  cache_valid?: boolean;
+}
+
+// Legacy hierarchical structure (for backward compatibility)
+export interface LocalStructureHierarchical {
   endpoint_id: string;
   endpoint_name: string;
   root_path: string;
@@ -56,7 +68,23 @@ export interface UploadQueueItem {
   selected: boolean;
 }
 
-// Request types
+// Request types - matches download pattern (single endpoint)
+export interface ShotSelection {
+  episode: string;
+  sequence: string;
+  shot: string;
+}
+
+export interface CreateUploadTaskRequest {
+  endpoint_id: string;  // Single endpoint (has both local_path and remote_path configured)
+  task_name: string;
+  shots: ShotSelection[];  // Selected shots to upload
+  departments: string[];   // Selected departments (e.g., ['comp'])
+  conflict_strategy?: UploadConflictStrategy;
+  notes?: string;
+}
+
+// Legacy item-based request (for backward compatibility)
 export interface UploadItemRequest {
   episode: string;
   sequence: string;
@@ -66,17 +94,6 @@ export interface UploadItemRequest {
   source_path: string;
   version?: string;
   size: number;
-}
-
-export interface CreateUploadTaskRequest {
-  source_endpoint_id: string;
-  target_endpoint_id: string;
-  task_name: string;
-  items: UploadItemRequest[];
-  version_strategy?: UploadVersionStrategy;
-  specific_version?: string;
-  conflict_strategy?: UploadConflictStrategy;
-  notes?: string;
 }
 
 // Version and conflict strategies for upload

@@ -32,26 +32,19 @@ router = APIRouter(tags=["uploads"])
 # Request/Response Schemas
 # ============================================================================
 
-class UploadItemRequest(BaseModel):
-    """Single file item for upload."""
+class ShotSelection(BaseModel):
+    """Shot selection for upload."""
     episode: str = Field(..., description="Episode name")
     sequence: str = Field(..., description="Sequence name")
     shot: str = Field(..., description="Shot name")
-    department: str = Field(..., description="Department name")
-    filename: str = Field(..., description="Filename")
-    source_path: str = Field(..., description="Full local path")
-    version: Optional[str] = Field(None, description="File version")
-    size: int = Field(0, description="File size in bytes")
 
 
 class CreateUploadTaskRequest(BaseModel):
-    """Request to create upload task."""
-    source_endpoint_id: UUID = Field(..., description="Local source endpoint UUID")
-    target_endpoint_id: UUID = Field(..., description="FTP/SFTP target endpoint UUID")
+    """Request to create upload task - matches download pattern (single endpoint)."""
+    endpoint_id: UUID = Field(..., description="Endpoint UUID (has both local_path and remote_path)")
     task_name: str = Field(..., description="User-friendly task name")
-    items: List[UploadItemRequest] = Field(..., description="List of files to upload")
-    version_strategy: Optional[str] = Field('latest', description="Version strategy")
-    specific_version: Optional[str] = Field(None, description="Specific version")
+    shots: List[ShotSelection] = Field(..., description="List of shots to upload")
+    departments: List[str] = Field(default=['comp'], description="Departments to upload")
     conflict_strategy: Optional[str] = Field('skip', description="skip or overwrite")
     notes: Optional[str] = Field(None, description="Optional notes")
 
@@ -127,21 +120,43 @@ async def get_local_structure(
         )
 
 
+@router.post("/structure/{endpoint_id}/scan")
+async def scan_local_structure(
+    endpoint_id: UUID,
+    force_refresh: bool = Query(False, description="Force refresh cache"),
+    db: AsyncSession = Depends(get_db)
+):
+    """Trigger a scan of local structure for an endpoint."""
+    try:
+        service = ShotUploadService(db)
+        result = await service.scan_local_structure(
+            endpoint_id=endpoint_id,
+            force_refresh=force_refresh
+        )
+        return {"success": True, "message": "Scan completed", "structure": result}
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error scanning structure: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to scan structure: {str(e)}"
+        )
+
+
 @router.post("/tasks")
 async def create_upload_task(
     request: CreateUploadTaskRequest,
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new upload task."""
+    """Create a new upload task - uses single endpoint (has both local_path and remote_path)."""
     try:
         service = ShotUploadService(db)
-        result = await service.create_upload_task(
-            source_endpoint_id=request.source_endpoint_id,
-            target_endpoint_id=request.target_endpoint_id,
+        result = await service.create_upload_task_v2(
+            endpoint_id=request.endpoint_id,
             task_name=request.task_name,
-            items=[item.dict() for item in request.items],
-            version_strategy=request.version_strategy or 'latest',
-            specific_version=request.specific_version,
+            shots=[shot.dict() for shot in request.shots],
+            departments=request.departments,
             conflict_strategy=request.conflict_strategy or 'skip',
             notes=request.notes
         )

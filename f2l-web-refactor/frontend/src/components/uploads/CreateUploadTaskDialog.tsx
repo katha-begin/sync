@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogTitle,
@@ -7,6 +7,7 @@ import {
   Button,
   TextField,
   MenuItem,
+  Grid,
   Typography,
   Alert,
   CircularProgress,
@@ -14,48 +15,22 @@ import {
   FormControl,
   InputLabel,
   Select,
-  Divider,
-  Paper,
-  List,
-  ListItem,
-  ListItemButton,
-  ListItemText,
-  ListItemIcon,
-  IconButton,
-  Tooltip,
-  FormControlLabel,
+  Chip,
   Radio,
   RadioGroup,
+  FormControlLabel,
   FormLabel,
-  Collapse,
-  LinearProgress,
+  Divider,
 } from '@mui/material';
-import {
-  Add as AddIcon,
-  Remove as RemoveIcon,
-  ExpandMore as ExpandIcon,
-  Folder as FolderIcon,
-  VideoFile as FileIcon,
-  ClearAll as ClearAllIcon,
-  ChevronRight as ChevronRightIcon,
-} from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { endpointService } from '@/services/endpointService';
 import { uploadService } from '@/services/uploadService';
+import { ROUTES } from '@/utils/constants';
 import {
-  LocalEpisode,
-  LocalSequence,
-  LocalShot,
-  LocalFile,
-  UploadQueueItem,
-  CreateUploadTaskRequest,
   UploadConflictStrategy,
   UPLOAD_CONFLICT_STRATEGY_LABELS,
-  formatBytes,
 } from '@/types/upload';
-
-// Simple unique ID generator (replaces uuid)
-const generateId = () => `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
 interface CreateUploadTaskDialogProps {
   open: boolean;
@@ -63,510 +38,359 @@ interface CreateUploadTaskDialogProps {
   onSuccess: () => void;
 }
 
-const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
-  open,
-  onClose,
-  onSuccess,
-}) => {
-  const queryClient = useQueryClient();
+// Department options for comp output upload
+const DEPARTMENTS = ['comp'];
 
-  // Form state
+const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({ open, onClose, onSuccess }) => {
+  const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  // Form state - mirrors CreateTaskDialog for download (single endpoint)
   const [taskName, setTaskName] = useState('');
   const [notes, setNotes] = useState('');
-  const [sourceEndpoint, setSourceEndpoint] = useState('');
-  const [targetEndpoint, setTargetEndpoint] = useState('');
+  const [selectedEndpoint, setSelectedEndpoint] = useState('');
+  const [selectedEpisodes, setSelectedEpisodes] = useState<string[]>([]);
+  const [selectedSequences, setSelectedSequences] = useState<string[]>([]);
+  const [selectedShots, setSelectedShots] = useState<string[]>([]);
+  const [selectedDepartments, setSelectedDepartments] = useState<string[]>(['comp']);
   const [conflictStrategy, setConflictStrategy] = useState<UploadConflictStrategy>('skip');
   const [error, setError] = useState<string | null>(null);
 
-  // Structure navigation state
-  const [expandedEpisodes, setExpandedEpisodes] = useState<Set<string>>(new Set());
-  const [expandedSequences, setExpandedSequences] = useState<Set<string>>(new Set());
-  const [expandedShots, setExpandedShots] = useState<Set<string>>(new Set());
-
-  // Upload queue state
-  const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
-
-  // Fetch endpoints
+  // Fetch endpoints - same as download dialog
   const { data: endpointsData } = useQuery({
     queryKey: ['endpoints'],
     queryFn: () => endpointService.getEndpoints(),
     enabled: open,
   });
 
+  // Handle both paginated response and plain array
   const endpoints = Array.isArray(endpointsData)
     ? endpointsData
     : (endpointsData?.items || []);
 
-  // Filter endpoints by type
-  const localEndpoints = endpoints.filter((e: any) => e.type === 'local');
-  const ftpEndpoints = endpoints.filter((e: any) => ['ftp', 'sftp'].includes(e.type));
-
-  // Fetch local structure
-  const { data: structure, isLoading: structureLoading } = useQuery({
-    queryKey: ['local-structure', sourceEndpoint],
-    queryFn: () => uploadService.getLocalStructure(sourceEndpoint),
-    enabled: !!sourceEndpoint && open,
+  // Fetch LOCAL structure from endpoint (reverse of download which fetches FTP structure)
+  const { data: structure, isLoading: structureLoading, refetch: refetchStructure } = useQuery({
+    queryKey: ['upload-local-structure', selectedEndpoint],
+    queryFn: () => uploadService.getLocalStructure(selectedEndpoint),
+    enabled: !!selectedEndpoint && open,
   });
+
+  // Trigger scan if structure is empty
+  useEffect(() => {
+    const triggerScanIfNeeded = async () => {
+      if (selectedEndpoint && structure && !structureLoading) {
+        const isEmpty = !structure.episodes || structure.episodes.length === 0;
+        if (isEmpty) {
+          try {
+            await uploadService.scanLocalStructure(selectedEndpoint, false);
+            refetchStructure();
+          } catch (err) {
+            console.error('Failed to scan local structure:', err);
+            setError('Failed to scan local structure. Please try again.');
+          }
+        }
+      }
+    };
+    triggerScanIfNeeded();
+  }, [selectedEndpoint, structure, structureLoading, refetchStructure]);
+
+  // Reset form when dialog closes
+  useEffect(() => {
+    if (!open) {
+      setTaskName('');
+      setNotes('');
+      setSelectedEndpoint('');
+      setSelectedEpisodes([]);
+      setSelectedSequences([]);
+      setSelectedShots([]);
+      setSelectedDepartments(['comp']);
+      setConflictStrategy('skip');
+      setError(null);
+    }
+  }, [open]);
+
+  // Filter sequences based on selected episodes
+  const availableSequences = structure?.sequences?.filter((seq: any) =>
+    selectedEpisodes.length === 0 || selectedEpisodes.includes(seq.episode)
+  ) || [];
+
+  // Filter shots based on selected episodes and sequences
+  const availableShots = structure?.shots?.filter((shot: any) => {
+    const episodeMatch = selectedEpisodes.length === 0 || selectedEpisodes.includes(shot.episode);
+    const sequenceMatch = selectedSequences.length === 0 || selectedSequences.includes(shot.sequence);
+    return episodeMatch && sequenceMatch;
+  }) || [];
 
   // Create task mutation
   const createTaskMutation = useMutation({
-    mutationFn: (request: CreateUploadTaskRequest) => uploadService.createTask(request),
+    mutationFn: async () => {
+      const shots = selectedShots.map(shotKey => {
+        const [episode, sequence, shot] = shotKey.split('|');
+        return { episode, sequence, shot };
+      });
+
+      return uploadService.createTask({
+        endpoint_id: selectedEndpoint,
+        task_name: taskName,
+        shots,
+        departments: selectedDepartments,
+        conflict_strategy: conflictStrategy,
+        notes: notes || undefined,
+      });
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['upload-tasks'] });
       onSuccess();
-      resetForm();
+      navigate(ROUTES.SHOT_UPLOAD);
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || err.message || 'Failed to create task');
+      setError(err.message || 'Failed to create upload task');
     },
   });
 
-  // Reset form
-  const resetForm = () => {
-    setTaskName('');
-    setNotes('');
-    setSourceEndpoint('');
-    setTargetEndpoint('');
-    setConflictStrategy('skip');
-    setUploadQueue([]);
-    setExpandedEpisodes(new Set());
-    setExpandedSequences(new Set());
-    setExpandedShots(new Set());
-    setError(null);
-  };
-
-  // Handle close
-  const handleClose = () => {
-    resetForm();
-    onClose();
-  };
-
-  // Toggle episode expansion
-  const toggleEpisode = (episodeName: string) => {
-    setExpandedEpisodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(episodeName)) next.delete(episodeName);
-      else next.add(episodeName);
-      return next;
-    });
-  };
-
-  // Toggle sequence expansion
-  const toggleSequence = (key: string) => {
-    setExpandedSequences((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  // Toggle shot expansion
-  const toggleShot = (key: string) => {
-    setExpandedShots((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  // Add file to queue
-  const addToQueue = (
-    episode: string,
-    sequence: string,
-    shot: string,
-    department: string,
-    file: LocalFile
-  ) => {
-    const exists = uploadQueue.some(
-      (item) =>
-        item.episode === episode &&
-        item.sequence === sequence &&
-        item.shot === shot &&
-        item.department === department &&
-        item.filename === file.filename
-    );
-
-    if (!exists) {
-      const newItem: UploadQueueItem = {
-        id: generateId(),
-        episode,
-        sequence,
-        shot,
-        department,
-        filename: file.filename,
-        source_path: file.path,
-        version: file.version,
-        size: file.size,
-        selected: true,
-      };
-      setUploadQueue((prev) => [...prev, newItem]);
-    }
-  };
-
-  // Remove from queue
-  const removeFromQueue = (id: string) => {
-    setUploadQueue((prev) => prev.filter((item) => item.id !== id));
-  };
-
-  // Clear queue
-  const clearQueue = () => {
-    setUploadQueue([]);
-  };
-
-  // Add all files from a shot
-  const addAllFromShot = (
-    episode: string,
-    sequence: string,
-    shot: LocalShot
-  ) => {
-    shot.departments.forEach((dept) => {
-      dept.files.forEach((file) => {
-        addToQueue(episode, sequence, shot.name, dept.name, file);
-      });
-    });
-  };
-
-  // Calculate totals
-  const totalSize = useMemo(
-    () => uploadQueue.reduce((sum, item) => sum + item.size, 0),
-    [uploadQueue]
-  );
-
-  // Handle submit
-  const handleSubmit = () => {
+  const handleCreate = () => {
     if (!taskName.trim()) {
-      setError('Task name is required');
+      setError('Please enter a task name');
       return;
     }
-    if (!sourceEndpoint) {
-      setError('Source endpoint is required');
+    if (!selectedEndpoint) {
+      setError('Please select an endpoint');
       return;
     }
-    if (!targetEndpoint) {
-      setError('Target endpoint is required');
+    if (selectedShots.length === 0) {
+      setError('Please select at least one shot');
       return;
     }
-    if (uploadQueue.length === 0) {
-      setError('Please add at least one file to upload');
-      return;
-    }
-
-    const request: CreateUploadTaskRequest = {
-      source_endpoint_id: sourceEndpoint,
-      target_endpoint_id: targetEndpoint,
-      task_name: taskName,
-      items: uploadQueue.map((item) => ({
-        episode: item.episode,
-        sequence: item.sequence,
-        shot: item.shot,
-        department: item.department,
-        filename: item.filename,
-        source_path: item.source_path,
-        version: item.version,
-        size: item.size,
-      })),
-      conflict_strategy: conflictStrategy,
-      notes: notes || undefined,
-    };
-
-    createTaskMutation.mutate(request);
+    createTaskMutation.mutate();
   };
 
   return (
-    <Dialog open={open} onClose={handleClose} maxWidth="xl" fullWidth>
-      <DialogTitle>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          Create Upload Task
-        </Box>
-      </DialogTitle>
+    <Dialog open={open} onClose={onClose} maxWidth="md" fullWidth>
+      <DialogTitle>Create Upload Task</DialogTitle>
+      <DialogContent>
+        <Box sx={{ mt: 2 }}>
+          <Grid container spacing={2}>
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                label="Task Name"
+                value={taskName}
+                onChange={(e) => setTaskName(e.target.value)}
+                placeholder="e.g., Episode 01 Comp Upload"
+                required
+              />
+            </Grid>
 
-      <DialogContent dividers>
-        {error && (
-          <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
-            {error}
-          </Alert>
-        )}
-
-        {/* Task Configuration */}
-        <Box sx={{ mb: 3 }}>
-          <TextField
-            label="Task Name"
-            value={taskName}
-            onChange={(e) => setTaskName(e.target.value)}
-            fullWidth
-            required
-            sx={{ mb: 2 }}
-          />
-
-          <Box sx={{ display: 'flex', gap: 2, mb: 2 }}>
-            <FormControl fullWidth>
-              <InputLabel>Source (Local)</InputLabel>
-              <Select
-                value={sourceEndpoint}
-                onChange={(e) => setSourceEndpoint(e.target.value)}
-                label="Source (Local)"
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                select
+                label="Endpoint"
+                value={selectedEndpoint}
+                onChange={(e) => setSelectedEndpoint(e.target.value)}
+                helperText={`${endpoints.length} endpoints available - Select endpoint to upload comp files from local to FTP`}
+                required
               >
-                {localEndpoints.map((ep: any) => (
-                  <MenuItem key={ep.id} value={ep.id}>
-                    {ep.name}
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+                {endpoints.length > 0 ? (
+                  endpoints.map((endpoint: any) => (
+                    <MenuItem key={endpoint.id} value={endpoint.id}>
+                      {endpoint.name} ({endpoint.endpoint_type?.toUpperCase()})
+                    </MenuItem>
+                  ))
+                ) : (
+                  <MenuItem disabled>No endpoints available</MenuItem>
+                )}
+              </TextField>
+            </Grid>
 
-            <FormControl fullWidth>
-              <InputLabel>Target (FTP/SFTP)</InputLabel>
-              <Select
-                value={targetEndpoint}
-                onChange={(e) => setTargetEndpoint(e.target.value)}
-                label="Target (FTP/SFTP)"
-              >
-                {ftpEndpoints.map((ep: any) => (
-                  <MenuItem key={ep.id} value={ep.id}>
-                    {ep.name} ({ep.type.toUpperCase()})
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
-          </Box>
-
-          <FormControl component="fieldset" sx={{ mb: 2 }}>
-            <FormLabel>Conflict Strategy</FormLabel>
-            <RadioGroup
-              row
-              value={conflictStrategy}
-              onChange={(e) => setConflictStrategy(e.target.value as UploadConflictStrategy)}
-            >
-              {Object.entries(UPLOAD_CONFLICT_STRATEGY_LABELS).map(([value, label]) => (
-                <FormControlLabel
-                  key={value}
-                  value={value}
-                  control={<Radio size="small" />}
-                  label={label}
-                />
-              ))}
-            </RadioGroup>
-          </FormControl>
-        </Box>
-
-        <Divider sx={{ mb: 2 }} />
-
-        {/* Split Panel: Left (Available) | Right (Queue) */}
-        <Box sx={{ display: 'flex', gap: 2, height: 400 }}>
-          {/* Left Panel - Available Files */}
-          <Paper variant="outlined" sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <Box sx={{ p: 1, bgcolor: 'grey.100', borderBottom: 1, borderColor: 'divider' }}>
-              <Typography variant="subtitle2">Available Files</Typography>
-              {structureLoading && <LinearProgress sx={{ mt: 1 }} />}
-            </Box>
-            <Box sx={{ flex: 1, overflow: 'auto' }}>
-              {!sourceEndpoint ? (
-                <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                  Select a source endpoint to browse files
-                </Box>
-              ) : structureLoading ? (
-                <Box sx={{ p: 2, textAlign: 'center' }}>
+            {selectedEndpoint && structureLoading && (
+              <Grid item xs={12}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', p: 2 }}>
                   <CircularProgress size={24} />
+                  <Typography sx={{ ml: 2 }}>Loading local structure...</Typography>
                 </Box>
-              ) : structure?.episodes?.length === 0 ? (
-                <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                  No episodes found
-                </Box>
-              ) : (
-                <List dense disablePadding>
-                  {structure?.episodes?.map((episode: LocalEpisode) => (
-                    <React.Fragment key={episode.name}>
-                      <ListItemButton onClick={() => toggleEpisode(episode.name)} sx={{ pl: 1 }}>
-                        <ListItemIcon sx={{ minWidth: 32 }}>
-                          {expandedEpisodes.has(episode.name) ? <ExpandIcon /> : <ChevronRightIcon />}
-                        </ListItemIcon>
-                        <ListItemIcon sx={{ minWidth: 32 }}>
-                          <FolderIcon color="primary" fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary={episode.name} />
-                      </ListItemButton>
-                      <Collapse in={expandedEpisodes.has(episode.name)}>
-                        {episode.sequences?.map((seq: LocalSequence) => (
-                          <React.Fragment key={`${episode.name}-${seq.name}`}>
-                            <ListItemButton
-                              onClick={() => toggleSequence(`${episode.name}-${seq.name}`)}
-                              sx={{ pl: 4 }}
-                            >
-                              <ListItemIcon sx={{ minWidth: 32 }}>
-                                {expandedSequences.has(`${episode.name}-${seq.name}`) ? (
-                                  <ExpandIcon />
-                                ) : (
-                                  <ChevronRightIcon />
-                                )}
-                              </ListItemIcon>
-                              <ListItemIcon sx={{ minWidth: 32 }}>
-                                <FolderIcon color="secondary" fontSize="small" />
-                              </ListItemIcon>
-                              <ListItemText primary={seq.name} />
-                            </ListItemButton>
-                            <Collapse in={expandedSequences.has(`${episode.name}-${seq.name}`)}>
-                              {seq.shots?.map((shot: LocalShot) => (
-                                <React.Fragment key={`${episode.name}-${seq.name}-${shot.name}`}>
-                                  <ListItemButton
-                                    onClick={() =>
-                                      toggleShot(`${episode.name}-${seq.name}-${shot.name}`)
-                                    }
-                                    sx={{ pl: 7 }}
-                                  >
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                      {expandedShots.has(
-                                        `${episode.name}-${seq.name}-${shot.name}`
-                                      ) ? (
-                                        <ExpandIcon />
-                                      ) : (
-                                        <ChevronRightIcon />
-                                      )}
-                                    </ListItemIcon>
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                      <FolderIcon fontSize="small" />
-                                    </ListItemIcon>
-                                    <ListItemText primary={shot.name} />
-                                    <Tooltip title="Add all files from this shot">
-                                      <IconButton
-                                        size="small"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          addAllFromShot(episode.name, seq.name, shot);
-                                        }}
-                                      >
-                                        <AddIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </ListItemButton>
-                                  <Collapse
-                                    in={expandedShots.has(
-                                      `${episode.name}-${seq.name}-${shot.name}`
-                                    )}
-                                  >
-                                    {shot.departments?.map((dept) =>
-                                      dept.files?.map((file) => (
-                                        <ListItem
-                                          key={`${episode.name}-${seq.name}-${shot.name}-${dept.name}-${file.filename}`}
-                                          sx={{ pl: 10 }}
-                                          secondaryAction={
-                                            <IconButton
-                                              size="small"
-                                              onClick={() =>
-                                                addToQueue(
-                                                  episode.name,
-                                                  seq.name,
-                                                  shot.name,
-                                                  dept.name,
-                                                  file
-                                                )
-                                              }
-                                            >
-                                              <AddIcon fontSize="small" />
-                                            </IconButton>
-                                          }
-                                        >
-                                          <ListItemIcon sx={{ minWidth: 32 }}>
-                                            <FileIcon fontSize="small" color="action" />
-                                          </ListItemIcon>
-                                          <ListItemText
-                                            primary={file.filename}
-                                            secondary={`${dept.name} | ${file.version || 'N/A'} | ${formatBytes(file.size)}`}
-                                          />
-                                        </ListItem>
-                                      ))
-                                    )}
-                                  </Collapse>
-                                </React.Fragment>
-                              ))}
-                            </Collapse>
-                          </React.Fragment>
-                        ))}
-                      </Collapse>
-                    </React.Fragment>
-                  ))}
-                </List>
-              )}
-            </Box>
-          </Paper>
+              </Grid>
+            )}
 
-          {/* Right Panel - Upload Queue */}
-          <Paper variant="outlined" sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-            <Box
-              sx={{
-                p: 1,
-                bgcolor: 'primary.main',
-                color: 'primary.contrastText',
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
-              <Typography variant="subtitle2">
-                Upload Queue ({uploadQueue.length} files, {formatBytes(totalSize)})
-              </Typography>
-              <Tooltip title="Clear All">
-                <IconButton size="small" onClick={clearQueue} sx={{ color: 'inherit' }}>
-                  <ClearAllIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </Box>
-            <Box sx={{ flex: 1, overflow: 'auto' }}>
-              {uploadQueue.length === 0 ? (
-                <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                  No files in queue. Add files from the left panel.
-                </Box>
-              ) : (
-                <List dense disablePadding>
-                  {uploadQueue.map((item) => (
-                    <ListItem
-                      key={item.id}
-                      secondaryAction={
-                        <IconButton
-                          size="small"
-                          onClick={() => removeFromQueue(item.id)}
-                          color="error"
-                        >
-                          <RemoveIcon fontSize="small" />
-                        </IconButton>
-                      }
+            {selectedEndpoint && !structureLoading && structure && (
+              <>
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Episodes</InputLabel>
+                    <Select
+                      multiple
+                      value={selectedEpisodes}
+                      onChange={(e) => setSelectedEpisodes(e.target.value as string[])}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      )}
                     >
-                      <ListItemIcon sx={{ minWidth: 32 }}>
-                        <FileIcon fontSize="small" color="primary" />
-                      </ListItemIcon>
-                      <ListItemText
-                        primary={item.filename}
-                        secondary={`${item.episode}/${item.sequence}/${item.shot}/${item.department} | ${item.version || 'N/A'} | ${formatBytes(item.size)}`}
+                      {(structure.episodes || []).map((ep: string) => (
+                        <MenuItem key={ep} value={ep}>{ep}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12} sm={6}>
+                  <FormControl fullWidth>
+                    <InputLabel>Sequences</InputLabel>
+                    <Select
+                      multiple
+                      value={selectedSequences}
+                      onChange={(e) => setSelectedSequences(e.target.value as string[])}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      )}
+                    >
+                      {availableSequences.map((seq: any) => (
+                        <MenuItem key={`${seq.episode}|${seq.sequence}`} value={seq.sequence}>
+                          {seq.sequence}
+                        </MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Shots</InputLabel>
+                    <Select
+                      multiple
+                      value={selectedShots}
+                      onChange={(e) => setSelectedShots(e.target.value as string[])}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => {
+                            const [, , shot] = value.split('|');
+                            return <Chip key={value} label={shot} size="small" />;
+                          })}
+                        </Box>
+                      )}
+                    >
+                      {availableShots.map((shot: any) => {
+                        const key = `${shot.episode}|${shot.sequence}|${shot.shot}`;
+                        return (
+                          <MenuItem key={key} value={key}>
+                            {shot.episode} / {shot.sequence} / {shot.shot}
+                          </MenuItem>
+                        );
+                      })}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl fullWidth>
+                    <InputLabel>Departments</InputLabel>
+                    <Select
+                      multiple
+                      value={selectedDepartments}
+                      onChange={(e) => setSelectedDepartments(e.target.value as string[])}
+                      renderValue={(selected) => (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      )}
+                    >
+                      {DEPARTMENTS.map((dept) => (
+                        <MenuItem key={dept} value={dept}>{dept}</MenuItem>
+                      ))}
+                    </Select>
+                  </FormControl>
+                </Grid>
+
+                {/* Conflict Strategy Section */}
+                <Grid item xs={12}>
+                  <Divider sx={{ my: 2 }} />
+                  <Typography variant="subtitle2" gutterBottom fontWeight="bold">
+                    File Conflict Handling
+                  </Typography>
+                </Grid>
+
+                <Grid item xs={12}>
+                  <FormControl component="fieldset">
+                    <FormLabel component="legend">What to do with existing files on FTP?</FormLabel>
+                    <RadioGroup
+                      value={conflictStrategy}
+                      onChange={(e) => setConflictStrategy(e.target.value as UploadConflictStrategy)}
+                    >
+                      <FormControlLabel
+                        value="skip"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {UPLOAD_CONFLICT_STRATEGY_LABELS.skip}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Skip files that already exist on FTP (Recommended - Fast & Safe)
+                            </Typography>
+                          </Box>
+                        }
                       />
-                    </ListItem>
-                  ))}
-                </List>
-              )}
-            </Box>
-          </Paper>
+                      <FormControlLabel
+                        value="overwrite"
+                        control={<Radio />}
+                        label={
+                          <Box>
+                            <Typography variant="body2" fontWeight="bold">
+                              {UPLOAD_CONFLICT_STRATEGY_LABELS.overwrite}
+                            </Typography>
+                            <Typography variant="caption" color="text.secondary">
+                              Overwrite all existing files on FTP without checking
+                            </Typography>
+                          </Box>
+                        }
+                      />
+                    </RadioGroup>
+                  </FormControl>
+                </Grid>
+              </>
+            )}
+
+            <Grid item xs={12}>
+              <Divider sx={{ my: 2 }} />
+            </Grid>
+
+            <Grid item xs={12}>
+              <TextField
+                fullWidth
+                multiline
+                rows={3}
+                label="Notes (Optional)"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+                placeholder="Add any notes about this upload task..."
+              />
+            </Grid>
+          </Grid>
+
+          {error && (
+            <Alert severity="error" sx={{ mt: 2 }} onClose={() => setError(null)}>
+              {error}
+            </Alert>
+          )}
         </Box>
-
-        {/* Notes */}
-        <TextField
-          label="Notes (optional)"
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          fullWidth
-          multiline
-          rows={2}
-          sx={{ mt: 2 }}
-        />
       </DialogContent>
-
       <DialogActions>
-        <Button onClick={handleClose}>Cancel</Button>
+        <Button onClick={onClose}>Cancel</Button>
         <Button
+          onClick={handleCreate}
           variant="contained"
-          onClick={handleSubmit}
-          disabled={createTaskMutation.isPending || uploadQueue.length === 0}
+          disabled={createTaskMutation.isPending}
         >
-          {createTaskMutation.isPending ? <CircularProgress size={20} /> : 'Create Task'}
+          {createTaskMutation.isPending ? 'Creating...' : 'Create Task'}
         </Button>
       </DialogActions>
     </Dialog>

@@ -56,19 +56,22 @@ class ShotUploadService:
         endpoint_id: UUID,
         episode_filter: Optional[str] = None,
         sequence_filter: Optional[str] = None,
-        department_filter: Optional[str] = None
+        department_filter: Optional[str] = None,
+        force_refresh: bool = False
     ) -> Dict[str, any]:
         """
         Scan local endpoint for shot structure.
+        Returns flat structure matching download pattern (episodes, sequences, shots arrays).
 
         Args:
-            endpoint_id: Local endpoint UUID
+            endpoint_id: Endpoint UUID (uses local_path for scanning)
             episode_filter: Optional episode to filter
             sequence_filter: Optional sequence to filter
             department_filter: Optional department to filter
+            force_refresh: Force refresh cache
 
         Returns:
-            Dict with hierarchical structure of episodes/sequences/shots/files
+            Dict with flat structure: episodes[], sequences[], shots[]
         """
         logger.info(f"Scanning local structure for endpoint {endpoint_id}")
 
@@ -76,19 +79,15 @@ class ShotUploadService:
         if not endpoint:
             raise ValueError(f"Endpoint {endpoint_id} not found")
 
-        if endpoint.endpoint_type != EndpointType.LOCAL:
-            raise ValueError(f"Endpoint {endpoint_id} is not a local endpoint")
-
+        # Use local_path from endpoint (works for any endpoint type that has local_path configured)
         local_path = endpoint.local_path
         if not local_path or not os.path.exists(local_path):
             raise ValueError(f"Local path '{local_path}' does not exist")
 
-        structure = {
-            "endpoint_id": str(endpoint_id),
-            "endpoint_name": endpoint.name,
-            "root_path": local_path,
-            "episodes": []
-        }
+        # Flat structure matching download pattern
+        episodes = []
+        sequences = []
+        shots = []
 
         # Scan episodes
         try:
@@ -99,11 +98,7 @@ class ShotUploadService:
                 if episode_filter and ep_name != episode_filter:
                     continue
 
-                episode_data = {
-                    "name": ep_name,
-                    "path": ep_path,
-                    "sequences": []
-                }
+                episodes.append(ep_name)
 
                 # Scan sequences
                 for seq_name in sorted(os.listdir(ep_path)):
@@ -113,11 +108,10 @@ class ShotUploadService:
                     if sequence_filter and seq_name != sequence_filter:
                         continue
 
-                    sequence_data = {
-                        "name": seq_name,
-                        "path": seq_path,
-                        "shots": []
-                    }
+                    # Add sequence if not already added
+                    seq_entry = {"episode": ep_name, "sequence": seq_name}
+                    if seq_entry not in sequences:
+                        sequences.append(seq_entry)
 
                     # Scan shots
                     for shot_name in sorted(os.listdir(seq_path)):
@@ -125,48 +119,40 @@ class ShotUploadService:
                         if not os.path.isdir(shot_path):
                             continue
 
-                        shot_data = {
-                            "name": shot_name,
-                            "path": shot_path,
-                            "departments": []
-                        }
-
-                        # Scan departments
-                        for dept_name in sorted(os.listdir(shot_path)):
+                        # Check if shot has comp/output folder
+                        has_comp_output = False
+                        for dept_name in os.listdir(shot_path):
                             dept_path = os.path.join(shot_path, dept_name)
                             if not os.path.isdir(dept_path):
                                 continue
                             if department_filter and dept_name != department_filter:
                                 continue
 
-                            # Check for output folder
                             output_path = os.path.join(dept_path, "output")
-                            if not os.path.exists(output_path):
-                                continue
+                            if os.path.exists(output_path) and os.listdir(output_path):
+                                has_comp_output = True
+                                break
 
-                            files = self._scan_output_files(output_path)
-                            if files:
-                                shot_data["departments"].append({
-                                    "name": dept_name,
-                                    "path": dept_path,
-                                    "output_path": output_path,
-                                    "files": files
-                                })
-
-                        if shot_data["departments"]:
-                            sequence_data["shots"].append(shot_data)
-
-                    if sequence_data["shots"]:
-                        episode_data["sequences"].append(sequence_data)
-
-                if episode_data["sequences"]:
-                    structure["episodes"].append(episode_data)
+                        if has_comp_output:
+                            shots.append({
+                                "episode": ep_name,
+                                "sequence": seq_name,
+                                "shot": shot_name
+                            })
 
         except Exception as e:
             logger.error(f"Error scanning local structure: {e}")
             raise
 
-        return structure
+        return {
+            "endpoint_id": str(endpoint_id),
+            "endpoint_name": endpoint.name,
+            "root_path": local_path,
+            "episodes": episodes,
+            "sequences": sequences,
+            "shots": shots,
+            "cache_valid": True
+        }
 
     def _scan_output_files(self, output_path: str) -> List[Dict]:
         """Scan output directory for uploadable files."""
@@ -297,6 +283,149 @@ class ShotUploadService:
             )
             upload_items.append(upload_item)
             total_size += upload_item.file_size
+
+        # Update task totals
+        task.total_items = len(upload_items)
+        task.total_size = total_size
+
+        for item in upload_items:
+            self.db.add(item)
+
+        await self.db.commit()
+
+        logger.info(
+            f"Created upload task {task.id} with {task.total_items} items "
+            f"({task.total_size / (1024**3):.2f} GB)"
+        )
+
+        return {
+            "success": True,
+            "task_id": str(task.id),
+            "task_name": task.name,
+            "total_items": task.total_items,
+            "total_size": task.total_size,
+            "status": task.status.value
+        }
+
+    async def create_upload_task_v2(
+        self,
+        endpoint_id: UUID,
+        task_name: str,
+        shots: List[Dict],
+        departments: List[str] = None,
+        conflict_strategy: str = 'skip',
+        created_by: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> Dict[str, any]:
+        """
+        Create an upload task using single endpoint (new pattern matching download).
+
+        Args:
+            endpoint_id: Endpoint UUID (has both local_path and remote_path configured)
+            task_name: User-friendly task name
+            shots: List of shots [{episode, sequence, shot}]
+            departments: List of departments to upload (default: ['comp'])
+            conflict_strategy: 'skip', 'overwrite'
+            created_by: Username who created the task
+            notes: Optional notes
+
+        Returns:
+            Dict with task information
+        """
+        if departments is None:
+            departments = ['comp']
+
+        logger.info(f"Creating upload task '{task_name}' for {len(shots)} shots")
+
+        # Get endpoint
+        endpoint = await self.endpoint_repo.get_by_id(endpoint_id)
+        if not endpoint:
+            raise ValueError(f"Endpoint {endpoint_id} not found")
+
+        local_path = endpoint.local_path
+        remote_path = endpoint.remote_path
+
+        if not local_path:
+            raise ValueError(f"Endpoint {endpoint_id} has no local_path configured")
+        if not remote_path:
+            raise ValueError(f"Endpoint {endpoint_id} has no remote_path configured")
+        if not os.path.exists(local_path):
+            raise ValueError(f"Local path '{local_path}' does not exist")
+
+        # Create task - use same endpoint for both source and target
+        task = ShotUploadTask(
+            id=uuid4(),
+            name=task_name,
+            source_endpoint_id=endpoint_id,
+            target_endpoint_id=endpoint_id,
+            status=ShotUploadTaskStatus.PENDING,
+            version_strategy='latest',
+            conflict_strategy=conflict_strategy,
+            total_items=0,
+            completed_items=0,
+            failed_items=0,
+            skipped_items=0,
+            total_size=0,
+            uploaded_size=0,
+            created_by=created_by,
+            notes=notes
+        )
+        self.db.add(task)
+        await self.db.flush()
+
+        # Scan and create upload items for selected shots
+        upload_items = []
+        total_size = 0
+
+        for shot_data in shots:
+            episode = shot_data.get('episode')
+            sequence = shot_data.get('sequence')
+            shot = shot_data.get('shot')
+
+            for dept in departments:
+                # Build local path: local_path/episode/sequence/shot/dept/output/
+                output_path = os.path.join(local_path, episode, sequence, shot, dept, "output")
+                if not os.path.exists(output_path):
+                    logger.warning(f"Output path not found: {output_path}")
+                    continue
+
+                # Scan files in output folder
+                for filename in os.listdir(output_path):
+                    file_path = os.path.join(output_path, filename)
+                    if not os.path.isfile(file_path):
+                        continue
+
+                    # Calculate relative path and target path
+                    relative_path = os.path.relpath(file_path, local_path)
+                    target_path = os.path.join(remote_path, relative_path).replace("\\", "/")
+
+                    stat = os.stat(file_path)
+                    version = self._extract_version(filename)
+
+                    upload_item = ShotUploadItem(
+                        id=uuid4(),
+                        task_id=task.id,
+                        episode=episode,
+                        sequence=sequence,
+                        shot=shot,
+                        department=dept,
+                        filename=filename,
+                        version=version,
+                        source_path=file_path,
+                        target_path=target_path,
+                        relative_path=relative_path,
+                        status=ShotUploadItemStatus.PENDING,
+                        file_size=stat.st_size,
+                        uploaded_size=0,
+                        target_exists=False
+                    )
+                    upload_items.append(upload_item)
+                    total_size += stat.st_size
+
+        if not upload_items:
+            # Rollback task if no items found
+            await self.db.rollback()
+            raise ValueError("No files found for selected shots and departments")
 
         # Update task totals
         task.total_items = len(upload_items)
