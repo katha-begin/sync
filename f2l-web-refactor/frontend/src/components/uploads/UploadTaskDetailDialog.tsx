@@ -29,6 +29,7 @@ import {
   ExpandMore as ExpandIcon,
   ExpandLess as CollapseIcon,
   ContentCopy as CopyIcon,
+  FileDownload as ExportIcon,
 } from '@mui/icons-material';
 import { useQuery } from '@tanstack/react-query';
 import { uploadService } from '@/services/uploadService';
@@ -66,6 +67,59 @@ const UploadTaskDetailDialog: React.FC<UploadTaskDetailDialogProps> = ({ open, t
       else next.add(id);
       return next;
     });
+  };
+
+  const exportToCSV = () => {
+    if (!task || !task.items) return;
+
+    const headers = ['Episode', 'Sequence', 'Shot', 'Department', 'Filename', 'Version', 'Status', 'File Size', 'Source Path', 'Target Path', 'Target Existed', 'Error'];
+    const rows = task.items.map((item: any) => [
+      item.episode,
+      item.sequence,
+      item.shot,
+      item.department,
+      item.filename,
+      item.version || '',
+      item.status,
+      item.file_size,
+      item.source_path,
+      item.target_path,
+      item.target_exists ? 'Yes' : 'No',
+      item.error_message || '',
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(row => row.map((cell: any) => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `upload-task-${task.name}-${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
+  const getStatusLabel = (item: any) => {
+    if (item.status === 'skipped') {
+      return item.target_exists ? 'Skipped (file exists)' : 'Skipped';
+    }
+    if (item.status === 'completed' && item.target_exists) {
+      return 'Overwritten';
+    }
+    return item.status;
+  };
+
+  const getStatusColor = (item: any): 'success' | 'error' | 'warning' | 'info' | 'default' => {
+    if (item.status === 'completed') return item.target_exists ? 'info' : 'success';
+    if (item.status === 'failed') return 'error';
+    if (item.status === 'skipped') return 'warning';
+    if (item.status === 'uploading') return 'info';
+    return 'default';
   };
 
   const copyToClipboard = (text: string) => {
@@ -156,10 +210,13 @@ const UploadTaskDetailDialog: React.FC<UploadTaskDetailDialogProps> = ({ open, t
                           </IconButton>
                         </TableCell>
                         <TableCell>
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                            {statusIcons[item.status]}
-                            <Typography variant="body2">{item.status}</Typography>
-                          </Box>
+                          <Chip
+                            icon={statusIcons[item.status] as React.ReactElement}
+                            label={getStatusLabel(item)}
+                            size="small"
+                            color={getStatusColor(item)}
+                            variant="outlined"
+                          />
                         </TableCell>
                         <TableCell>{item.episode}</TableCell>
                         <TableCell>{item.sequence}</TableCell>
@@ -199,14 +256,23 @@ const UploadTaskDetailDialog: React.FC<UploadTaskDetailDialogProps> = ({ open, t
                                   </IconButton>
                                 </Box>
                               </Box>
+                              {/* Status details */}
+                              <Box sx={{ mt: 1, display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                                {item.status === 'skipped' && item.target_exists && (
+                                  <Chip label="⏭️ Skipped - Target file already exists" size="small" color="warning" />
+                                )}
+                                {item.status === 'completed' && item.target_exists && (
+                                  <Chip label="✅ Overwritten - Replaced existing file" size="small" color="info" />
+                                )}
+                                {item.status === 'completed' && !item.target_exists && (
+                                  <Chip label="✅ Uploaded - New file created" size="small" color="success" />
+                                )}
+                              </Box>
                               {item.error_message && (
-                                <Box>
+                                <Box sx={{ mt: 1 }}>
                                   <Typography variant="caption" color="error">Error:</Typography>
                                   <Typography variant="body2" color="error.main">{item.error_message}</Typography>
                                 </Box>
-                              )}
-                              {item.target_exists && (
-                                <Chip label="Target file exists" size="small" color="warning" sx={{ mt: 1 }} />
                               )}
                             </Box>
                           </Collapse>
@@ -223,7 +289,14 @@ const UploadTaskDetailDialog: React.FC<UploadTaskDetailDialogProps> = ({ open, t
         )}
       </DialogContent>
 
-      <DialogActions>
+      <DialogActions sx={{ justifyContent: 'space-between' }}>
+        <Button
+          startIcon={<ExportIcon />}
+          onClick={exportToCSV}
+          disabled={!task || !task.items?.length}
+        >
+          Export CSV
+        </Button>
         <Button onClick={onClose}>Close</Button>
       </DialogActions>
     </Dialog>
