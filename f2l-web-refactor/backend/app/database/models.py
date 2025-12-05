@@ -634,15 +634,15 @@ class ShotUploadTask(Base):
     """
     Shot Upload Task - Represents an upload task created by user.
     Contains multiple shot/department items to upload from local to FTP.
+    Uses single endpoint that has both local_path (source) and remote_path (target).
     """
     __tablename__ = "shot_upload_tasks"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
-    # Source (Local) and Target (FTP) endpoints
-    source_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"))
-    target_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"))
+    # Single endpoint with both local_path (source) and remote_path (target)
+    endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"))
 
     # Status
     status: Mapped[ShotUploadTaskStatus] = mapped_column(Enum(ShotUploadTaskStatus, values_callable=lambda x: [e.value for e in x]), default=ShotUploadTaskStatus.PENDING)
@@ -675,13 +675,11 @@ class ShotUploadTask(Base):
 
     # Relationships
     items: Mapped[list["ShotUploadItem"]] = relationship("ShotUploadItem", back_populates="task", cascade="all, delete-orphan")
-    source_endpoint: Mapped["Endpoint"] = relationship("Endpoint", foreign_keys=[source_endpoint_id])
-    target_endpoint: Mapped["Endpoint"] = relationship("Endpoint", foreign_keys=[target_endpoint_id])
+    endpoint: Mapped["Endpoint"] = relationship("Endpoint", foreign_keys=[endpoint_id])
 
     # Indexes
     __table_args__ = (
-        Index("idx_shot_upload_task_source", "source_endpoint_id"),
-        Index("idx_shot_upload_task_target", "target_endpoint_id"),
+        Index("idx_shot_upload_task_endpoint", "endpoint_id"),
         Index("idx_shot_upload_task_status", "status"),
         Index("idx_shot_upload_task_created", "created_at"),
     )
