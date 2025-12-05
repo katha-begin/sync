@@ -68,12 +68,11 @@ export interface UploadQueueItem {
   selected: boolean;
 }
 
-// Request types - matches download pattern (single endpoint)
-export interface ShotSelection {
-  episode: string;
-  sequence: string;
-  shot: string;
-}
+// Import ShotSelection from shot.ts to avoid duplicate export
+import { ShotSelection } from './shot';
+
+// Re-export for convenience
+export type { ShotSelection };
 
 export interface CreateUploadTaskRequest {
   endpoint_id: string;  // Single endpoint (has both local_path and remote_path configured)

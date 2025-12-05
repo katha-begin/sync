@@ -4,7 +4,35 @@ export * from './endpoint';
 export * from './session';
 export * from './execution';
 export * from './shot';
-export * from './upload';
+// Export upload types except ShotSelection (already exported from shot.ts)
+export {
+  LocalFile,
+  LocalDepartment,
+  LocalShot,
+  LocalSequence,
+  LocalEpisode,
+  LocalStructure,
+  LocalStructureHierarchical,
+  UploadQueueItem,
+  CreateUploadTaskRequest,
+  UploadItemRequest,
+  UploadVersionStrategy,
+  UploadConflictStrategy,
+  UploadTaskStatus,
+  UploadItemStatus,
+  UploadTask,
+  UploadTaskItem,
+  UploadTaskDetails,
+  UploadHistoryItem,
+  UploadHistoryResponse,
+  UPLOAD_TASK_STATUS_LABELS,
+  UPLOAD_ITEM_STATUS_LABELS,
+  UPLOAD_TASK_STATUS_COLORS,
+  UPLOAD_ITEM_STATUS_COLORS,
+  UPLOAD_CONFLICT_STRATEGY_LABELS,
+  formatBytes,
+  calculateProgress,
+} from './upload';
 
 // Common UI Types
 export interface SelectOption<T = string> {
