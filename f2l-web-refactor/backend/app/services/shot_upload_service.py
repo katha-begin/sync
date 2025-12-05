@@ -80,6 +80,11 @@ class ShotUploadService:
         local_path = endpoint.local_path
         if not local_path:
             raise ValueError(f"Endpoint {endpoint_id} does not have local_path configured")
+
+        # If path is relative, join with /mnt (the base mount point)
+        if not local_path.startswith('/'):
+            local_path = os.path.join('/mnt', local_path)
+
         if not os.path.exists(local_path):
             raise ValueError(f"Local path '{local_path}' does not exist")
 

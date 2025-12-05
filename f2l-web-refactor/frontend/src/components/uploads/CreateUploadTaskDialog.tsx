@@ -109,7 +109,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
   );
 
   // Fetch local structure using selected endpoint's local_path
-  const { data: structure, isLoading: structureLoading } = useQuery({
+  const { data: structure, isLoading: structureLoading, error: structureError } = useQuery({
     queryKey: ['upload-local-structure', selectedEndpoint],
     queryFn: () => uploadService.getLocalStructure(selectedEndpoint),
     enabled: !!selectedEndpoint && open,
@@ -390,6 +390,22 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
           </FormControl>
 
           {/* Episode/Sequence/Shot Filters - Show after endpoint is selected */}
+          {selectedEndpoint && structureLoading && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+              <CircularProgress size={20} />
+              <Typography variant="body2" color="text.secondary">
+                Loading structure from local path...
+              </Typography>
+            </Box>
+          )}
+
+          {selectedEndpoint && structureError && (
+            <Alert severity="error" sx={{ mb: 2 }}>
+              Failed to load structure: {(structureError as Error)?.message || 'Unknown error'}.
+              Please ensure the endpoint's local_path is correctly configured and accessible.
+            </Alert>
+          )}
+
           {selectedEndpoint && !structureLoading && structure && (
             <Grid container spacing={2} sx={{ mb: 2 }}>
               <Grid item xs={12} sm={4}>
