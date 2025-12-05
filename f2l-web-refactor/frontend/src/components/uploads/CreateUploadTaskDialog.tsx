@@ -18,7 +18,6 @@ import {
   Paper,
   List,
   ListItem,
-  ListItemButton,
   ListItemText,
   ListItemIcon,
   IconButton,
@@ -27,18 +26,17 @@ import {
   Radio,
   RadioGroup,
   FormLabel,
-  Collapse,
   Grid,
   Chip,
+  Switch,
 } from '@mui/material';
 import {
   Add as AddIcon,
   Remove as RemoveIcon,
-  ExpandMore as ExpandIcon,
-  Folder as FolderIcon,
   VideoFile as FileIcon,
   ClearAll as ClearAllIcon,
-  ChevronRight as ChevronRightIcon,
+  SelectAll as SelectAllIcon,
+  Deselect as DeselectIcon,
 } from '@mui/icons-material';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { endpointService } from '@/services/endpointService';
@@ -84,10 +82,8 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
   const [selectedShots, setSelectedShots] = useState<string[]>([]);
   const [selectedDepartments, setSelectedDepartments] = useState<string[]>([]);
 
-  // Structure navigation state (for file tree expansion)
-  const [expandedEpisodes, setExpandedEpisodes] = useState<Set<string>>(new Set());
-  const [expandedSequences, setExpandedSequences] = useState<Set<string>>(new Set());
-  const [expandedShots, setExpandedShots] = useState<Set<string>>(new Set());
+  // Latest version only toggle
+  const [latestOnly, setLatestOnly] = useState(true);
 
   // Upload queue state
   const [uploadQueue, setUploadQueue] = useState<UploadQueueItem[]>([]);
@@ -178,38 +174,94 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     return Array.from(departmentSet).sort();
   }, [structure, selectedEpisodes, selectedSequences, selectedShots]);
 
-  // Filter the structure to only show selected shots and departments in the file tree
-  const filteredStructure = useMemo(() => {
-    if (!structure?.episodes || selectedShots.length === 0) return null;
+  // Flatten structure into a list of files for display
+  interface FlatFile {
+    id: string;
+    episode: string;
+    sequence: string;
+    shot: string;
+    department: string;
+    filename: string;
+    path: string;
+    version: string;
+    size: number;
+    isLatest: boolean;
+  }
 
-    // Parse selected shot keys (format: "episode|sequence|shot")
+  const availableFiles = useMemo((): FlatFile[] => {
+    if (!structure?.episodes || selectedShots.length === 0) return [];
+
     const selectedShotSet = new Set(selectedShots);
     const filterByDepartment = selectedDepartments.length > 0;
+    const files: FlatFile[] = [];
 
-    const filteredEpisodes = structure.episodes
+    // Collect all files
+    structure.episodes
       .filter((ep: LocalEpisode) => selectedEpisodes.includes(ep.name))
-      .map((ep: LocalEpisode) => ({
-        ...ep,
-        sequences: ep.sequences
+      .forEach((ep: LocalEpisode) => {
+        ep.sequences
           ?.filter((seq: LocalSequence) => selectedSequences.includes(seq.name))
-          .map((seq: LocalSequence) => ({
-            ...seq,
-            shots: seq.shots
+          .forEach((seq: LocalSequence) => {
+            seq.shots
               ?.filter((shot: LocalShot) => selectedShotSet.has(`${ep.name}|${seq.name}|${shot.name}`))
-              .map((shot: LocalShot) => ({
-                ...shot,
-                departments: filterByDepartment
-                  ? shot.departments?.filter((dept) => selectedDepartments.includes(dept.name))
-                  : shot.departments,
-              }))
-              .filter((shot: LocalShot) => shot.departments && shot.departments.length > 0),
-          }))
-          .filter((seq: LocalSequence) => seq.shots && seq.shots.length > 0),
-      }))
-      .filter((ep: LocalEpisode) => ep.sequences && ep.sequences.length > 0);
+              .forEach((shot: LocalShot) => {
+                shot.departments
+                  ?.filter((dept) => !filterByDepartment || selectedDepartments.includes(dept.name))
+                  .forEach((dept) => {
+                    dept.files?.forEach((file: LocalFile) => {
+                      files.push({
+                        id: `${ep.name}-${seq.name}-${shot.name}-${dept.name}-${file.filename}`,
+                        episode: ep.name,
+                        sequence: seq.name,
+                        shot: shot.name,
+                        department: dept.name,
+                        filename: file.filename,
+                        path: file.path,
+                        version: file.version || '',
+                        size: file.size,
+                        isLatest: false, // Will be set below
+                      });
+                    });
+                  });
+              });
+          });
+      });
 
-    return { episodes: filteredEpisodes };
+    // Determine latest version per shot+department
+    const latestVersionMap = new Map<string, string>();
+    files.forEach((f) => {
+      const key = `${f.episode}|${f.sequence}|${f.shot}|${f.department}`;
+      const currentLatest = latestVersionMap.get(key);
+      if (!currentLatest || f.version > currentLatest) {
+        latestVersionMap.set(key, f.version);
+      }
+    });
+
+    // Mark latest files
+    files.forEach((f) => {
+      const key = `${f.episode}|${f.sequence}|${f.shot}|${f.department}`;
+      f.isLatest = f.version === latestVersionMap.get(key);
+    });
+
+    // Sort by episode, sequence, shot, department, version (desc)
+    files.sort((a, b) => {
+      if (a.episode !== b.episode) return a.episode.localeCompare(b.episode);
+      if (a.sequence !== b.sequence) return a.sequence.localeCompare(b.sequence);
+      if (a.shot !== b.shot) return a.shot.localeCompare(b.shot);
+      if (a.department !== b.department) return a.department.localeCompare(b.department);
+      return b.version.localeCompare(a.version); // Latest first
+    });
+
+    return files;
   }, [structure, selectedEpisodes, selectedSequences, selectedShots, selectedDepartments]);
+
+  // Filter by latestOnly toggle
+  const displayedFiles = useMemo(() => {
+    if (latestOnly) {
+      return availableFiles.filter((f) => f.isLatest);
+    }
+    return availableFiles;
+  }, [availableFiles, latestOnly]);
 
   // Create task mutation
   const createTaskMutation = useMutation({
@@ -235,9 +287,7 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     setSelectedShots([]);
     setSelectedDepartments([]);
     setUploadQueue([]);
-    setExpandedEpisodes(new Set());
-    setExpandedSequences(new Set());
-    setExpandedShots(new Set());
+    setLatestOnly(true);
     setError(null);
   };
 
@@ -247,60 +297,27 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     onClose();
   };
 
-  // Toggle episode expansion
-  const toggleEpisode = (episodeName: string) => {
-    setExpandedEpisodes((prev) => {
-      const next = new Set(prev);
-      if (next.has(episodeName)) next.delete(episodeName);
-      else next.add(episodeName);
-      return next;
-    });
-  };
-
-  // Toggle sequence expansion
-  const toggleSequence = (key: string) => {
-    setExpandedSequences((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
-  };
-
-  // Toggle shot expansion
-  const toggleShot = (key: string) => {
-    setExpandedShots((prev) => {
-      const next = new Set(prev);
-      if (next.has(key)) next.delete(key);
-      else next.add(key);
-      return next;
-    });
+  // Check if file is in queue
+  const isInQueue = (file: FlatFile) => {
+    return uploadQueue.some(
+      (item) =>
+        item.episode === file.episode &&
+        item.sequence === file.sequence &&
+        item.shot === file.shot &&
+        item.department === file.department &&
+        item.filename === file.filename
+    );
   };
 
   // Add file to queue
-  const addToQueue = (
-    episode: string,
-    sequence: string,
-    shot: string,
-    department: string,
-    file: LocalFile
-  ) => {
-    const exists = uploadQueue.some(
-      (item) =>
-        item.episode === episode &&
-        item.sequence === sequence &&
-        item.shot === shot &&
-        item.department === department &&
-        item.filename === file.filename
-    );
-
-    if (!exists) {
+  const addFileToQueue = (file: FlatFile) => {
+    if (!isInQueue(file)) {
       const newItem: UploadQueueItem = {
         id: generateId(),
-        episode,
-        sequence,
-        shot,
-        department,
+        episode: file.episode,
+        sequence: file.sequence,
+        shot: file.shot,
+        department: file.department,
         filename: file.filename,
         source_path: file.path,
         version: file.version,
@@ -311,7 +328,21 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     }
   };
 
-  // Remove from queue
+  // Remove file from queue by matching fields
+  const removeFileFromQueue = (file: FlatFile) => {
+    setUploadQueue((prev) =>
+      prev.filter(
+        (item) =>
+          !(item.episode === file.episode &&
+            item.sequence === file.sequence &&
+            item.shot === file.shot &&
+            item.department === file.department &&
+            item.filename === file.filename)
+      )
+    );
+  };
+
+  // Remove from queue by ID
   const removeFromQueue = (id: string) => {
     setUploadQueue((prev) => prev.filter((item) => item.id !== id));
   };
@@ -321,16 +352,19 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     setUploadQueue([]);
   };
 
-  // Add all files from a shot
-  const addAllFromShot = (
-    episode: string,
-    sequence: string,
-    shot: LocalShot
-  ) => {
-    shot.departments.forEach((dept) => {
-      dept.files.forEach((file) => {
-        addToQueue(episode, sequence, shot.name, dept.name, file);
-      });
+  // Select all visible files
+  const selectAll = () => {
+    displayedFiles.forEach((file) => {
+      if (!isInQueue(file)) {
+        addFileToQueue(file);
+      }
+    });
+  };
+
+  // Deselect all visible files
+  const deselectAll = () => {
+    displayedFiles.forEach((file) => {
+      removeFileFromQueue(file);
     });
   };
 
@@ -583,12 +617,37 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
 
         <Divider sx={{ mb: 2 }} />
 
-        {/* Split Panel: Left (Available) | Right (Queue) - Only show when shots are selected */}
+        {/* Split Panel: Left (Available) | Right (Queue) */}
         <Box sx={{ display: 'flex', gap: 2, height: 400 }}>
-          {/* Left Panel - Available Files */}
+          {/* Left Panel - Available Files (Flat List) */}
           <Paper variant="outlined" sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ p: 1, bgcolor: 'grey.100', borderBottom: 1, borderColor: 'divider' }}>
-              <Typography variant="subtitle2">Available Files</Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                <Typography variant="subtitle2">Available Files ({displayedFiles.length})</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <FormControlLabel
+                    control={
+                      <Switch
+                        size="small"
+                        checked={latestOnly}
+                        onChange={(e) => setLatestOnly(e.target.checked)}
+                      />
+                    }
+                    label={<Typography variant="caption">Latest Only</Typography>}
+                    sx={{ mr: 1 }}
+                  />
+                  <Tooltip title="Select All">
+                    <IconButton size="small" onClick={selectAll} disabled={displayedFiles.length === 0}>
+                      <SelectAllIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                  <Tooltip title="Deselect All">
+                    <IconButton size="small" onClick={deselectAll} disabled={displayedFiles.length === 0}>
+                      <DeselectIcon fontSize="small" />
+                    </IconButton>
+                  </Tooltip>
+                </Box>
+              </Box>
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto' }}>
               {!selectedEndpoint ? (
@@ -599,122 +658,50 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                 <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
                   Select Episode → Sequence → Shot to browse files
                 </Box>
-              ) : !filteredStructure || filteredStructure.episodes.length === 0 ? (
+              ) : displayedFiles.length === 0 ? (
                 <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                  No files found for selected shots
+                  No files found for selected filters
                 </Box>
               ) : (
                 <List dense disablePadding>
-                  {filteredStructure.episodes.map((episode: LocalEpisode) => (
-                    <React.Fragment key={episode.name}>
-                      <ListItemButton onClick={() => toggleEpisode(episode.name)} sx={{ pl: 1 }}>
+                  {displayedFiles.map((file) => {
+                    const inQueue = isInQueue(file);
+                    return (
+                      <ListItem
+                        key={file.id}
+                        sx={{
+                          bgcolor: inQueue ? 'action.selected' : 'inherit',
+                          '&:hover': { bgcolor: inQueue ? 'action.selected' : 'action.hover' },
+                        }}
+                        secondaryAction={
+                          <IconButton
+                            size="small"
+                            onClick={() => inQueue ? removeFileFromQueue(file) : addFileToQueue(file)}
+                            color={inQueue ? 'error' : 'default'}
+                          >
+                            {inQueue ? <RemoveIcon fontSize="small" /> : <AddIcon fontSize="small" />}
+                          </IconButton>
+                        }
+                      >
                         <ListItemIcon sx={{ minWidth: 32 }}>
-                          {expandedEpisodes.has(episode.name) ? <ExpandIcon /> : <ChevronRightIcon />}
+                          <FileIcon fontSize="small" color={inQueue ? 'primary' : 'action'} />
                         </ListItemIcon>
-                        <ListItemIcon sx={{ minWidth: 32 }}>
-                          <FolderIcon color="primary" fontSize="small" />
-                        </ListItemIcon>
-                        <ListItemText primary={episode.name} />
-                      </ListItemButton>
-                      <Collapse in={expandedEpisodes.has(episode.name)}>
-                        {episode.sequences?.map((seq: LocalSequence) => (
-                          <React.Fragment key={`${episode.name}-${seq.name}`}>
-                            <ListItemButton
-                              onClick={() => toggleSequence(`${episode.name}-${seq.name}`)}
-                              sx={{ pl: 4 }}
-                            >
-                              <ListItemIcon sx={{ minWidth: 32 }}>
-                                {expandedSequences.has(`${episode.name}-${seq.name}`) ? (
-                                  <ExpandIcon />
-                                ) : (
-                                  <ChevronRightIcon />
-                                )}
-                              </ListItemIcon>
-                              <ListItemIcon sx={{ minWidth: 32 }}>
-                                <FolderIcon color="secondary" fontSize="small" />
-                              </ListItemIcon>
-                              <ListItemText primary={seq.name} />
-                            </ListItemButton>
-                            <Collapse in={expandedSequences.has(`${episode.name}-${seq.name}`)}>
-                              {seq.shots?.map((shot: LocalShot) => (
-                                <React.Fragment key={`${episode.name}-${seq.name}-${shot.name}`}>
-                                  <ListItemButton
-                                    onClick={() =>
-                                      toggleShot(`${episode.name}-${seq.name}-${shot.name}`)
-                                    }
-                                    sx={{ pl: 7 }}
-                                  >
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                      {expandedShots.has(
-                                        `${episode.name}-${seq.name}-${shot.name}`
-                                      ) ? (
-                                        <ExpandIcon />
-                                      ) : (
-                                        <ChevronRightIcon />
-                                      )}
-                                    </ListItemIcon>
-                                    <ListItemIcon sx={{ minWidth: 32 }}>
-                                      <FolderIcon fontSize="small" />
-                                    </ListItemIcon>
-                                    <ListItemText primary={shot.name} />
-                                    <Tooltip title="Add all files from this shot">
-                                      <IconButton
-                                        size="small"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          addAllFromShot(episode.name, seq.name, shot);
-                                        }}
-                                      >
-                                        <AddIcon fontSize="small" />
-                                      </IconButton>
-                                    </Tooltip>
-                                  </ListItemButton>
-                                  <Collapse
-                                    in={expandedShots.has(
-                                      `${episode.name}-${seq.name}-${shot.name}`
-                                    )}
-                                  >
-                                    {shot.departments?.map((dept) =>
-                                      dept.files?.map((file) => (
-                                        <ListItem
-                                          key={`${episode.name}-${seq.name}-${shot.name}-${dept.name}-${file.filename}`}
-                                          sx={{ pl: 10 }}
-                                          secondaryAction={
-                                            <IconButton
-                                              size="small"
-                                              onClick={() =>
-                                                addToQueue(
-                                                  episode.name,
-                                                  seq.name,
-                                                  shot.name,
-                                                  dept.name,
-                                                  file
-                                                )
-                                              }
-                                            >
-                                              <AddIcon fontSize="small" />
-                                            </IconButton>
-                                          }
-                                        >
-                                          <ListItemIcon sx={{ minWidth: 32 }}>
-                                            <FileIcon fontSize="small" color="action" />
-                                          </ListItemIcon>
-                                          <ListItemText
-                                            primary={file.filename}
-                                            secondary={`${dept.name} | ${file.version || 'N/A'} | ${formatBytes(file.size)}`}
-                                          />
-                                        </ListItem>
-                                      ))
-                                    )}
-                                  </Collapse>
-                                </React.Fragment>
-                              ))}
-                            </Collapse>
-                          </React.Fragment>
-                        ))}
-                      </Collapse>
-                    </React.Fragment>
-                  ))}
+                        <ListItemText
+                          primary={
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                              <Typography variant="body2" noWrap sx={{ maxWidth: 280 }}>
+                                {file.filename}
+                              </Typography>
+                              {!file.isLatest && !latestOnly && (
+                                <Chip label="older" size="small" variant="outlined" sx={{ height: 16, fontSize: '0.65rem' }} />
+                              )}
+                            </Box>
+                          }
+                          secondary={`${file.department} | ${file.version || 'N/A'} | ${formatBytes(file.size)} | ${file.shot}`}
+                        />
+                      </ListItem>
+                    );
+                  })}
                 </List>
               )}
             </Box>
