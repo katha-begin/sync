@@ -29,6 +29,8 @@ import {
   FormLabel,
   Collapse,
   LinearProgress,
+  Grid,
+  Chip,
 } from '@mui/material';
 import {
   Add as AddIcon,
@@ -77,7 +79,12 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
   const [conflictStrategy, setConflictStrategy] = useState<UploadConflictStrategy>('skip');
   const [error, setError] = useState<string | null>(null);
 
-  // Structure navigation state
+  // Episode/Sequence/Shot filter state
+  const [selectedEpisodes, setSelectedEpisodes] = useState<string[]>([]);
+  const [selectedSequences, setSelectedSequences] = useState<string[]>([]);
+  const [selectedShots, setSelectedShots] = useState<string[]>([]);
+
+  // Structure navigation state (for file tree expansion)
   const [expandedEpisodes, setExpandedEpisodes] = useState<Set<string>>(new Set());
   const [expandedSequences, setExpandedSequences] = useState<Set<string>>(new Set());
   const [expandedShots, setExpandedShots] = useState<Set<string>>(new Set());
@@ -109,6 +116,70 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     enabled: !!selectedEndpoint && open,
   });
 
+  // Compute available episode names from structure
+  const availableEpisodeNames = useMemo(() => {
+    if (!structure?.episodes) return [];
+    return structure.episodes.map((ep: LocalEpisode) => ep.name);
+  }, [structure]);
+
+  // Compute available sequences based on selected episodes
+  const availableSequences = useMemo(() => {
+    if (!structure?.episodes || selectedEpisodes.length === 0) return [];
+    const sequences: { episode: string; sequence: string }[] = [];
+    structure.episodes
+      .filter((ep: LocalEpisode) => selectedEpisodes.includes(ep.name))
+      .forEach((ep: LocalEpisode) => {
+        ep.sequences?.forEach((seq: LocalSequence) => {
+          sequences.push({ episode: ep.name, sequence: seq.name });
+        });
+      });
+    return sequences;
+  }, [structure, selectedEpisodes]);
+
+  // Compute available shots based on selected sequences
+  const availableShots = useMemo(() => {
+    if (!structure?.episodes || selectedSequences.length === 0) return [];
+    const shots: { episode: string; sequence: string; shot: string }[] = [];
+    structure.episodes
+      .filter((ep: LocalEpisode) => selectedEpisodes.includes(ep.name))
+      .forEach((ep: LocalEpisode) => {
+        ep.sequences
+          ?.filter((seq: LocalSequence) => selectedSequences.includes(seq.name))
+          .forEach((seq: LocalSequence) => {
+            seq.shots?.forEach((shot: LocalShot) => {
+              shots.push({ episode: ep.name, sequence: seq.name, shot: shot.name });
+            });
+          });
+      });
+    return shots;
+  }, [structure, selectedEpisodes, selectedSequences]);
+
+  // Filter the structure to only show selected shots in the file tree
+  const filteredStructure = useMemo(() => {
+    if (!structure?.episodes || selectedShots.length === 0) return null;
+
+    // Parse selected shot keys (format: "episode|sequence|shot")
+    const selectedShotSet = new Set(selectedShots);
+
+    const filteredEpisodes = structure.episodes
+      .filter((ep: LocalEpisode) => selectedEpisodes.includes(ep.name))
+      .map((ep: LocalEpisode) => ({
+        ...ep,
+        sequences: ep.sequences
+          ?.filter((seq: LocalSequence) => selectedSequences.includes(seq.name))
+          .map((seq: LocalSequence) => ({
+            ...seq,
+            shots: seq.shots?.filter((shot: LocalShot) =>
+              selectedShotSet.has(`${ep.name}|${seq.name}|${shot.name}`)
+            ),
+          }))
+          .filter((seq: LocalSequence) => seq.shots && seq.shots.length > 0),
+      }))
+      .filter((ep: LocalEpisode) => ep.sequences && ep.sequences.length > 0);
+
+    return { episodes: filteredEpisodes };
+  }, [structure, selectedEpisodes, selectedSequences, selectedShots]);
+
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: (request: CreateUploadTaskRequest) => uploadService.createTask(request),
@@ -128,6 +199,9 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
     setNotes('');
     setSelectedEndpoint('');
     setConflictStrategy('skip');
+    setSelectedEpisodes([]);
+    setSelectedSequences([]);
+    setSelectedShots([]);
     setUploadQueue([]);
     setExpandedEpisodes(new Set());
     setExpandedSequences(new Set());
@@ -316,6 +390,102 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
             </Select>
           </FormControl>
 
+          {/* Episode/Sequence/Shot Filters - Show after endpoint is selected */}
+          {selectedEndpoint && !structureLoading && structure && (
+            <Grid container spacing={2} sx={{ mb: 2 }}>
+              <Grid item xs={12} sm={4}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Episodes</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedEpisodes}
+                    onChange={(e) => {
+                      setSelectedEpisodes(e.target.value as string[]);
+                      setSelectedSequences([]);
+                      setSelectedShots([]);
+                    }}
+                    label="Episodes"
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {availableEpisodeNames.map((ep: string) => (
+                      <MenuItem key={ep} value={ep}>{ep}</MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <FormControl fullWidth size="small" disabled={selectedEpisodes.length === 0}>
+                  <InputLabel>Sequences</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedSequences}
+                    onChange={(e) => {
+                      setSelectedSequences(e.target.value as string[]);
+                      setSelectedShots([]);
+                    }}
+                    label="Sequences"
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => (
+                          <Chip key={value} label={value} size="small" />
+                        ))}
+                      </Box>
+                    )}
+                  >
+                    {availableSequences.map((seq) => (
+                      <MenuItem key={`${seq.episode}|${seq.sequence}`} value={seq.sequence}>
+                        {seq.sequence}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+
+              <Grid item xs={12} sm={4}>
+                <FormControl fullWidth size="small" disabled={selectedSequences.length === 0}>
+                  <InputLabel>Shots</InputLabel>
+                  <Select
+                    multiple
+                    value={selectedShots}
+                    onChange={(e) => setSelectedShots(e.target.value as string[])}
+                    label="Shots"
+                    renderValue={(selected) => (
+                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                        {selected.map((value) => {
+                          const [, , shot] = value.split('|');
+                          return <Chip key={value} label={shot} size="small" />;
+                        })}
+                      </Box>
+                    )}
+                  >
+                    {availableShots.map((shot) => {
+                      const key = `${shot.episode}|${shot.sequence}|${shot.shot}`;
+                      return (
+                        <MenuItem key={key} value={key}>
+                          {shot.episode} / {shot.sequence} / {shot.shot}
+                        </MenuItem>
+                      );
+                    })}
+                  </Select>
+                </FormControl>
+              </Grid>
+            </Grid>
+          )}
+
+          {selectedEndpoint && structureLoading && (
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 2 }}>
+              <CircularProgress size={20} />
+              <Typography variant="body2">Loading structure...</Typography>
+            </Box>
+          )}
+
           <FormControl component="fieldset" sx={{ mb: 2 }}>
             <FormLabel>Conflict Strategy</FormLabel>
             <RadioGroup
@@ -337,30 +507,29 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
 
         <Divider sx={{ mb: 2 }} />
 
-        {/* Split Panel: Left (Available) | Right (Queue) */}
+        {/* Split Panel: Left (Available) | Right (Queue) - Only show when shots are selected */}
         <Box sx={{ display: 'flex', gap: 2, height: 400 }}>
           {/* Left Panel - Available Files */}
           <Paper variant="outlined" sx={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             <Box sx={{ p: 1, bgcolor: 'grey.100', borderBottom: 1, borderColor: 'divider' }}>
               <Typography variant="subtitle2">Available Files</Typography>
-              {structureLoading && <LinearProgress sx={{ mt: 1 }} />}
             </Box>
             <Box sx={{ flex: 1, overflow: 'auto' }}>
               {!selectedEndpoint ? (
                 <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
                   Select an endpoint to browse files
                 </Box>
-              ) : structureLoading ? (
-                <Box sx={{ p: 2, textAlign: 'center' }}>
-                  <CircularProgress size={24} />
-                </Box>
-              ) : structure?.episodes?.length === 0 ? (
+              ) : selectedShots.length === 0 ? (
                 <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
-                  No episodes found
+                  Select Episode → Sequence → Shot to browse files
+                </Box>
+              ) : !filteredStructure || filteredStructure.episodes.length === 0 ? (
+                <Box sx={{ p: 2, textAlign: 'center', color: 'text.secondary' }}>
+                  No files found for selected shots
                 </Box>
               ) : (
                 <List dense disablePadding>
-                  {structure?.episodes?.map((episode: LocalEpisode) => (
+                  {filteredStructure.episodes.map((episode: LocalEpisode) => (
                     <React.Fragment key={episode.name}>
                       <ListItemButton onClick={() => toggleEpisode(episode.name)} sx={{ pl: 1 }}>
                         <ListItemIcon sx={{ minWidth: 32 }}>
