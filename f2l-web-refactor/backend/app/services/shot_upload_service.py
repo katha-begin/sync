@@ -361,29 +361,33 @@ class ShotUploadService:
 
         try:
             # Get endpoint (single endpoint with both local_path and remote_path)
+            # Note: get_with_decrypted_password returns a dict, not an Endpoint object
             endpoint = await self.endpoint_repo.get_with_decrypted_password(task.endpoint_id)
 
             if not endpoint:
                 raise ValueError("Endpoint not found")
 
+            endpoint_name = endpoint['name']
+            endpoint_type = endpoint['endpoint_type']
+
             # Create target manager (FTP or SFTP)
-            if endpoint.endpoint_type == EndpointType.FTP:
+            if endpoint_type == EndpointType.FTP:
                 ftp_config = FTPConfig(
-                    host=endpoint.host,
-                    port=endpoint.port or 21,
-                    username=endpoint.username,
-                    password=endpoint.password,
-                    remote_path=endpoint.remote_path or "/"
+                    host=endpoint['host'],
+                    port=endpoint['port'] or 21,
+                    username=endpoint['username'],
+                    password=endpoint.get('password'),
+                    remote_path=endpoint['remote_path'] or "/"
                 )
                 ftp_manager = FTPManager(ftp_config)
                 ftp_manager.connect()
             else:
                 sftp_config = SFTPConfig(
-                    host=endpoint.host,
-                    port=endpoint.port or 22,
-                    username=endpoint.username,
-                    password=endpoint.password,
-                    remote_path=endpoint.remote_path or "/"
+                    host=endpoint['host'],
+                    port=endpoint['port'] or 22,
+                    username=endpoint['username'],
+                    password=endpoint.get('password'),
+                    remote_path=endpoint['remote_path'] or "/"
                 )
                 sftp_manager = SFTPManager(sftp_config)
                 sftp_manager.connect()
@@ -434,7 +438,7 @@ class ShotUploadService:
                         logger.info(f"Uploaded: {item.filename}")
 
                     # Record history (single endpoint has both local and remote info)
-                    await self._record_history(task, item, endpoint.name, endpoint.name)
+                    await self._record_history(task, item, endpoint_name, endpoint_name)
 
                 except Exception as e:
                     item.status = ShotUploadItemStatus.FAILED
@@ -445,7 +449,7 @@ class ShotUploadService:
 
                     # Record failed history
                     await self._record_history(
-                        task, item, endpoint.name, endpoint.name, str(e)
+                        task, item, endpoint_name, endpoint_name, str(e)
                     )
 
                 # Update task progress
