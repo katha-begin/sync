@@ -12,7 +12,8 @@ from app.api.v1 import (
     logs,
     sessions,
     settings,
-    shots
+    shots,
+    uploads
 )
 
 # Create main API router
@@ -28,3 +29,4 @@ api_router.include_router(logs.router)
 api_router.include_router(sessions.router)
 api_router.include_router(settings.router)
 api_router.include_router(shots.router)
+api_router.include_router(uploads.router, prefix="/uploads")

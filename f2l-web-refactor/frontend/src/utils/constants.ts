@@ -200,6 +200,7 @@ export const ROUTES = {
   PROFILE: '/profile',
   SHOT_DOWNLOAD: '/shot-download',
   DOWNLOAD_TASKS: '/download-tasks',
+  SHOT_UPLOAD: '/shot-upload',
 } as const;
 
 // Form Validation Rules

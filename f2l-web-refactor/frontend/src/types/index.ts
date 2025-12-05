@@ -4,6 +4,7 @@ export * from './endpoint';
 export * from './session';
 export * from './execution';
 export * from './shot';
+export * from './upload';
 
 // Common UI Types
 export interface SelectOption<T = string> {

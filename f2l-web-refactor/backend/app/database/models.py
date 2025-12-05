@@ -609,6 +609,197 @@ class ShotDownloadItem(Base):
         return f"<ShotDownloadItem(id={self.id}, shot={self.episode}/{self.sequence}/{self.shot}/{self.department}, status={self.status})>"
 
 
+# Shot Upload Models
+# ------------------
+
+class ShotUploadTaskStatus(str, enum.Enum):
+    """Shot upload task status enumeration."""
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class ShotUploadItemStatus(str, enum.Enum):
+    """Shot upload item status enumeration."""
+    PENDING = "pending"
+    UPLOADING = "uploading"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class ShotUploadTask(Base):
+    """
+    Shot Upload Task - Represents an upload task created by user.
+    Contains multiple shot/department items to upload from local to FTP.
+    """
+    __tablename__ = "shot_upload_tasks"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Source (Local) and Target (FTP) endpoints
+    source_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"))
+    target_endpoint_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="CASCADE"))
+
+    # Status
+    status: Mapped[ShotUploadTaskStatus] = mapped_column(Enum(ShotUploadTaskStatus, values_callable=lambda x: [e.value for e in x]), default=ShotUploadTaskStatus.PENDING)
+
+    # Version Control
+    version_strategy: Mapped[str] = mapped_column(String(20), default='latest')  # 'latest', 'specific', 'all', 'custom'
+    specific_version: Mapped[Optional[str]] = mapped_column(String(20))  # Used when version_strategy = 'specific'
+
+    # File Conflict Handling
+    conflict_strategy: Mapped[str] = mapped_column(String(20), default='skip')  # 'skip', 'overwrite'
+
+    # Progress tracking
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    completed_items: Mapped[int] = mapped_column(Integer, default=0)
+    failed_items: Mapped[int] = mapped_column(Integer, default=0)
+    skipped_items: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Size tracking
+    total_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    uploaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+
+    # Timestamps
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # User info
+    created_by: Mapped[Optional[str]] = mapped_column(String(255))
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Relationships
+    items: Mapped[list["ShotUploadItem"]] = relationship("ShotUploadItem", back_populates="task", cascade="all, delete-orphan")
+    source_endpoint: Mapped["Endpoint"] = relationship("Endpoint", foreign_keys=[source_endpoint_id])
+    target_endpoint: Mapped["Endpoint"] = relationship("Endpoint", foreign_keys=[target_endpoint_id])
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_shot_upload_task_source", "source_endpoint_id"),
+        Index("idx_shot_upload_task_target", "target_endpoint_id"),
+        Index("idx_shot_upload_task_status", "status"),
+        Index("idx_shot_upload_task_created", "created_at"),
+    )
+
+    def __repr__(self):
+        return f"<ShotUploadTask(id={self.id}, name='{self.name}', status={self.status})>"
+
+
+class ShotUploadItem(Base):
+    """
+    Shot Upload Item - Individual file to upload within an upload task.
+    """
+    __tablename__ = "shot_upload_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    task_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), ForeignKey("shot_upload_tasks.id", ondelete="CASCADE"))
+
+    # Shot information
+    episode: Mapped[str] = mapped_column(String(50), nullable=False)
+    sequence: Mapped[str] = mapped_column(String(50), nullable=False)
+    shot: Mapped[str] = mapped_column(String(50), nullable=False)
+    department: Mapped[str] = mapped_column(String(50), nullable=False)  # 'comp', etc.
+
+    # File information
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[Optional[str]] = mapped_column(String(50))  # e.g., 'v001'
+
+    # Paths
+    source_path: Mapped[str] = mapped_column(Text, nullable=False)  # Full local path
+    target_path: Mapped[str] = mapped_column(Text, nullable=False)  # Full FTP path
+    relative_path: Mapped[str] = mapped_column(Text, nullable=False)  # Path relative to root
+
+    # Status
+    status: Mapped[ShotUploadItemStatus] = mapped_column(Enum(ShotUploadItemStatus, values_callable=lambda x: [e.value for e in x]), default=ShotUploadItemStatus.PENDING)
+
+    # Size tracking
+    file_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    uploaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+
+    # Target file info (for conflict detection)
+    target_exists: Mapped[bool] = mapped_column(Boolean, default=False)
+    target_size: Mapped[Optional[int]] = mapped_column(Integer)  # bytes
+
+    # Error handling
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Timestamps
+    started_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime(timezone=True))
+
+    # Relationships
+    task: Mapped["ShotUploadTask"] = relationship("ShotUploadTask", back_populates="items")
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_shot_upload_item_task", "task_id"),
+        Index("idx_shot_upload_item_status", "status"),
+        Index("idx_shot_upload_item_shot", "episode", "sequence", "shot"),
+    )
+
+    def __repr__(self):
+        return f"<ShotUploadItem(id={self.id}, file={self.filename}, status={self.status})>"
+
+
+class ShotUploadHistory(Base):
+    """
+    Shot Upload History - Track all uploads for auditing and reporting.
+    """
+    __tablename__ = "shot_upload_history"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+
+    # Link to original task/item (may be null if task deleted)
+    task_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    item_id: Mapped[Optional[uuid.UUID]] = mapped_column(UUID(as_uuid=True))
+    task_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Shot information
+    episode: Mapped[str] = mapped_column(String(50), nullable=False)
+    sequence: Mapped[str] = mapped_column(String(50), nullable=False)
+    shot: Mapped[str] = mapped_column(String(50), nullable=False)
+    department: Mapped[str] = mapped_column(String(50), nullable=False)
+
+    # File information
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    version: Mapped[Optional[str]] = mapped_column(String(50))
+    file_size: Mapped[int] = mapped_column(Integer, default=0)
+
+    # Paths
+    source_path: Mapped[str] = mapped_column(Text, nullable=False)
+    target_path: Mapped[str] = mapped_column(Text, nullable=False)
+
+    # Endpoint information (stored for history even if endpoint deleted)
+    source_endpoint_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    target_endpoint_name: Mapped[str] = mapped_column(String(255), nullable=False)
+
+    # Result
+    status: Mapped[str] = mapped_column(String(20), nullable=False)  # 'completed', 'failed', 'skipped'
+    error_message: Mapped[Optional[str]] = mapped_column(Text)
+
+    # Timestamps
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    # User info
+    uploaded_by: Mapped[Optional[str]] = mapped_column(String(255))
+
+    # Indexes
+    __table_args__ = (
+        Index("idx_upload_history_task", "task_id"),
+        Index("idx_upload_history_shot", "episode", "sequence", "shot"),
+        Index("idx_upload_history_date", "uploaded_at"),
+        Index("idx_upload_history_status", "status"),
+    )
+
+    def __repr__(self):
+        return f"<ShotUploadHistory(id={self.id}, file={self.filename}, status={self.status})>"
+
+
 class User(Base):
     """
     User model - Optional multi-user support.

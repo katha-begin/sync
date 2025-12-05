@@ -7,6 +7,7 @@ import Dashboard from '@/pages/Dashboard';
 import Endpoints from '@/pages/Endpoints';
 import Sessions from '@/pages/Sessions';
 import ShotDownload from '@/pages/ShotDownload';
+import ShotUpload from '@/pages/ShotUpload';
 import DownloadTasks from '@/pages/DownloadTasks';
 import { useAuth } from '@/stores/authStore';
 import { ROUTES } from '@/utils/constants';
@@ -145,6 +146,7 @@ const App: React.FC = () => {
                     <Route path={ROUTES.LOGS} element={<Logs />} />
                     <Route path={ROUTES.SETTINGS} element={<Settings />} />
                     <Route path={ROUTES.SHOT_DOWNLOAD} element={<ShotDownload />} />
+                    <Route path={ROUTES.SHOT_UPLOAD} element={<ShotUpload />} />
                     <Route path={ROUTES.DOWNLOAD_TASKS} element={<DownloadTasks />} />
 
                     {/* Catch all - redirect to dashboard */}

@@ -25,6 +25,7 @@ import {
   ChevronRight as ExpandIcon,
   Movie as ShotIcon,
   CloudDownload as DownloadIcon,
+  CloudUpload as UploadIcon,
 } from '@mui/icons-material';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { useSidebar } from '@/stores/uiStore';
@@ -76,6 +77,12 @@ const navigationItems: NavigationItem[] = [
     label: 'Shot Download',
     icon: <ShotIcon />,
     path: ROUTES.SHOT_DOWNLOAD,
+  },
+  {
+    id: 'shot-upload',
+    label: 'Shot Upload',
+    icon: <UploadIcon />,
+    path: ROUTES.SHOT_UPLOAD,
   },
   {
     id: 'download-tasks',
