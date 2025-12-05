@@ -168,6 +168,7 @@ const ShotUpload: React.FC = () => {
 
   // History columns
   const historyColumns: TableColumn<UploadHistoryItem>[] = [
+    { id: 'task_name', label: 'Task', minWidth: 120 },
     { id: 'episode', label: 'Episode', minWidth: 80 },
     { id: 'sequence', label: 'Sequence', minWidth: 80 },
     { id: 'shot', label: 'Shot', minWidth: 80 },
@@ -192,6 +193,20 @@ const ShotUpload: React.FC = () => {
     {
       id: 'uploaded_at', label: 'Uploaded', minWidth: 150,
       render: (value) => formatDate(value as string),
+    },
+    {
+      id: 'actions', label: 'Actions', minWidth: 80, align: 'center',
+      render: (_, row) => (
+        <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
+          {row.task_id && (
+            <Tooltip title="View Task Details">
+              <IconButton size="small" onClick={() => setDetailTaskId(row.task_id!)} color="default">
+                <ViewIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
+      ),
     },
   ];
 
