@@ -661,8 +661,8 @@ class ShotUploadTask(Base):
     skipped_items: Mapped[int] = mapped_column(Integer, default=0)
 
     # Size tracking
-    total_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
-    uploaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    total_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
+    uploaded_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -716,12 +716,12 @@ class ShotUploadItem(Base):
     status: Mapped[ShotUploadItemStatus] = mapped_column(Enum(ShotUploadItemStatus, values_callable=lambda x: [e.value for e in x]), default=ShotUploadItemStatus.PENDING)
 
     # Size tracking
-    file_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
-    uploaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    file_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
+    uploaded_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
 
     # Target file info (for conflict detection)
     target_exists: Mapped[bool] = mapped_column(Boolean, default=False)
-    target_size: Mapped[Optional[int]] = mapped_column(Integer)  # bytes
+    target_size: Mapped[Optional[int]] = mapped_column(BigInteger)  # bytes
 
     # Error handling
     error_message: Mapped[Optional[str]] = mapped_column(Text)
@@ -766,7 +766,7 @@ class ShotUploadHistory(Base):
     # File information
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
     version: Mapped[Optional[str]] = mapped_column(String(50))
-    file_size: Mapped[int] = mapped_column(Integer, default=0)
+    file_size: Mapped[int] = mapped_column(BigInteger, default=0)
 
     # Paths
     source_path: Mapped[str] = mapped_column(Text, nullable=False)
