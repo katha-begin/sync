@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = '009_fix_upload_size_columns'
-down_revision: Union[str, None] = '008_schedule_history'
+down_revision: Union[str, None] = '005_upload_single_endpoint'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
