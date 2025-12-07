@@ -5,7 +5,7 @@ Implements the complete PostgreSQL schema.
 from datetime import datetime
 from typing import Optional
 from sqlalchemy import (
-    Column, String, Integer, Boolean, DateTime, Text, JSON, Float,
+    Column, String, Integer, BigInteger, Boolean, DateTime, Text, JSON, Float,
     ForeignKey, Enum, Index, CheckConstraint, UniqueConstraint
 )
 from sqlalchemy.dialects.postgresql import UUID, JSONB
