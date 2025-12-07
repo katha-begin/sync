@@ -510,22 +510,43 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                     multiple
                     value={selectedSequences}
                     onChange={(e) => {
-                      setSelectedSequences(e.target.value as string[]);
+                      const value = e.target.value as string[];
+                      // Handle "All" selection
+                      if (value.includes('__ALL__') && !selectedSequences.includes('__ALL__')) {
+                        // User clicked "All" - select all sequences
+                        const allSeqNames = [...new Set(availableSequences.map((s) => s.sequence))];
+                        setSelectedSequences(allSeqNames);
+                      } else if (!value.includes('__ALL__') && selectedSequences.includes('__ALL__')) {
+                        // User unclicked something while all was selected - do nothing special
+                        setSelectedSequences(value.filter((v) => v !== '__ALL__'));
+                      } else {
+                        setSelectedSequences(value.filter((v) => v !== '__ALL__'));
+                      }
                       setSelectedShots([]);
                       setSelectedDepartments([]);
                     }}
                     label="Sequences"
-                    renderValue={(selected) => (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((value) => (
-                          <Chip key={value} label={value} size="small" />
-                        ))}
-                      </Box>
-                    )}
+                    renderValue={(selected) => {
+                      const allSeqNames = [...new Set(availableSequences.map((s) => s.sequence))];
+                      const isAllSelected = allSeqNames.length > 0 && allSeqNames.every((s) => selected.includes(s));
+                      if (isAllSelected) {
+                        return <Chip label="All" size="small" color="primary" />;
+                      }
+                      return (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => (
+                            <Chip key={value} label={value} size="small" />
+                          ))}
+                        </Box>
+                      );
+                    }}
                   >
-                    {availableSequences.map((seq) => (
-                      <MenuItem key={`${seq.episode}|${seq.sequence}`} value={seq.sequence}>
-                        {seq.sequence}
+                    <MenuItem value="__ALL__">
+                      <em>All Sequences</em>
+                    </MenuItem>
+                    {[...new Set(availableSequences.map((seq) => seq.sequence))].map((seqName) => (
+                      <MenuItem key={seqName} value={seqName}>
+                        {seqName}
                       </MenuItem>
                     ))}
                   </Select>
@@ -539,24 +560,45 @@ const CreateUploadTaskDialog: React.FC<CreateUploadTaskDialogProps> = ({
                     multiple
                     value={selectedShots}
                     onChange={(e) => {
-                      setSelectedShots(e.target.value as string[]);
+                      const value = e.target.value as string[];
+                      // Handle "All" selection
+                      if (value.includes('__ALL__') && !selectedShots.includes('__ALL__')) {
+                        // User clicked "All" - select all shots
+                        const allShotKeys = availableShots.map((s) => `${s.episode}|${s.sequence}|${s.shot}`);
+                        setSelectedShots(allShotKeys);
+                      } else if (!value.includes('__ALL__') && selectedShots.includes('__ALL__')) {
+                        // User unclicked something while all was selected
+                        setSelectedShots(value.filter((v) => v !== '__ALL__'));
+                      } else {
+                        setSelectedShots(value.filter((v) => v !== '__ALL__'));
+                      }
                       setSelectedDepartments([]);
                     }}
                     label="Shots"
-                    renderValue={(selected) => (
-                      <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
-                        {selected.map((value) => {
-                          const [, , shot] = value.split('|');
-                          return <Chip key={value} label={shot} size="small" />;
-                        })}
-                      </Box>
-                    )}
+                    renderValue={(selected) => {
+                      const allShotKeys = availableShots.map((s) => `${s.episode}|${s.sequence}|${s.shot}`);
+                      const isAllSelected = allShotKeys.length > 0 && allShotKeys.every((s) => selected.includes(s));
+                      if (isAllSelected) {
+                        return <Chip label="All" size="small" color="primary" />;
+                      }
+                      return (
+                        <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
+                          {selected.map((value) => {
+                            const [, , shot] = value.split('|');
+                            return <Chip key={value} label={shot} size="small" />;
+                          })}
+                        </Box>
+                      );
+                    }}
                   >
+                    <MenuItem value="__ALL__">
+                      <em>All Shots</em>
+                    </MenuItem>
                     {availableShots.map((shot) => {
                       const key = `${shot.episode}|${shot.sequence}|${shot.shot}`;
                       return (
                         <MenuItem key={key} value={key}>
-                          {shot.episode} / {shot.sequence} / {shot.shot}
+                          {shot.shot}
                         </MenuItem>
                       );
                     })}
