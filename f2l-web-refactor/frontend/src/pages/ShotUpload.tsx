@@ -31,7 +31,6 @@ import { TableColumn } from '@/types';
 import { formatDate, formatBytes } from '@/utils/formatters';
 import {
   UploadTask,
-  UploadHistoryItem,
   UPLOAD_TASK_STATUS_LABELS,
   UPLOAD_TASK_STATUS_COLORS,
 } from '@/types/upload';
@@ -70,11 +69,13 @@ const ShotUpload: React.FC = () => {
     (task) => task.status === 'pending' || task.status === 'running'
   ) || [];
 
-  // Fetch upload history
-  const { data: historyData, isLoading: historyLoading, refetch: refetchHistory } = useQuery({
-    queryKey: ['upload-history'],
-    queryFn: () => uploadService.getHistory({ limit: 100 }),
-  });
+  // History tab shows completed/failed/cancelled tasks
+  const historyTasks = tasksData?.tasks?.filter(
+    (task) => task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
+  ) || [];
+
+  // Refetch history is same as refetch tasks now
+  const refetchHistory = refetchTasks;
 
   // Mutations
   const executeMutation = useMutation({
@@ -102,7 +103,7 @@ const ShotUpload: React.FC = () => {
   });
 
   const tasks = activeTasks;  // Only pending/running tasks
-  const history = historyData?.history || [];
+  const history = historyTasks;  // Completed/failed/cancelled tasks
 
   // Task columns
   const taskColumns: TableColumn<UploadTask>[] = [
@@ -172,45 +173,50 @@ const ShotUpload: React.FC = () => {
     },
   ];
 
-  // History columns
-  const historyColumns: TableColumn<UploadHistoryItem>[] = [
-    { id: 'task_name', label: 'Task', minWidth: 120 },
-    { id: 'episode', label: 'Episode', minWidth: 80 },
-    { id: 'sequence', label: 'Sequence', minWidth: 80 },
-    { id: 'shot', label: 'Shot', minWidth: 80 },
-    { id: 'department', label: 'Dept', minWidth: 80 },
-    { id: 'filename', label: 'Filename', minWidth: 200 },
-    { id: 'version', label: 'Version', minWidth: 80 },
+  // History columns - same as task columns but for completed/failed/cancelled tasks
+  const historyColumns: TableColumn<UploadTask>[] = [
+    { id: 'name', label: 'Task Name', minWidth: 200 },
     {
-      id: 'file_size', label: 'Size', minWidth: 100, align: 'right',
-      render: (_, row) => formatBytes(row.file_size),
-    },
-    {
-      id: 'status', label: 'Status', minWidth: 100,
+      id: 'status', label: 'Status', minWidth: 120,
       render: (_, row) => (
         <Chip
-          label={row.status}
+          label={UPLOAD_TASK_STATUS_LABELS[row.status]}
           size="small"
-          color={row.status === 'completed' ? 'success' : row.status === 'failed' ? 'error' : 'default'}
+          sx={{ bgcolor: UPLOAD_TASK_STATUS_COLORS[row.status], color: 'white' }}
         />
       ),
     },
-    { id: 'target_endpoint_name', label: 'Target', minWidth: 120 },
+    { id: 'total_items', label: 'Items', minWidth: 80, align: 'right' },
     {
-      id: 'uploaded_at', label: 'Uploaded', minWidth: 150,
+      id: 'progress', label: 'Progress', minWidth: 150,
+      render: (_, row) => `${row.completed_items}/${row.total_items} (${row.skipped_items} skipped, ${row.failed_items} failed)`,
+    },
+    {
+      id: 'total_size', label: 'Size', minWidth: 100, align: 'right',
+      render: (_, row) => formatBytes(row.total_size),
+    },
+    {
+      id: 'created_at', label: 'Created', minWidth: 150,
       render: (value) => formatDate(value as string),
     },
     {
-      id: 'actions', label: 'Actions', minWidth: 80, align: 'center',
+      id: 'completed_at', label: 'Completed', minWidth: 150,
+      render: (value) => value ? formatDate(value as string) : '-',
+    },
+    {
+      id: 'actions', label: 'Actions', minWidth: 120, align: 'center',
       render: (_, row) => (
         <Box sx={{ display: 'flex', gap: 0.5, justifyContent: 'center' }}>
-          {row.task_id && (
-            <Tooltip title="View Task Details">
-              <IconButton size="small" onClick={() => setDetailTaskId(row.task_id!)} color="default">
-                <ViewIcon fontSize="small" />
-              </IconButton>
-            </Tooltip>
-          )}
+          <Tooltip title="View Details">
+            <IconButton size="small" onClick={() => setDetailTaskId(row.id)} color="default">
+              <ViewIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
+          <Tooltip title="Delete">
+            <IconButton size="small" onClick={() => deleteMutation.mutate(row.id)} color="error">
+              <DeleteIcon fontSize="small" />
+            </IconButton>
+          </Tooltip>
         </Box>
       ),
     },
@@ -255,7 +261,7 @@ const ShotUpload: React.FC = () => {
       </TabPanel>
 
       <TabPanel value={tabValue} index={1}>
-        {historyLoading ? (
+        {tasksLoading ? (
           <Box sx={{ display: 'flex', justifyContent: 'center', p: 3 }}><CircularProgress /></Box>
         ) : (
           <DataTable columns={historyColumns} data={history} selectedRows={[]} onSelectionChange={() => {}} actions={[]} />
