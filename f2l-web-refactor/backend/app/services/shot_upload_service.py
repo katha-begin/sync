@@ -196,7 +196,7 @@ class ShotUploadService:
         except Exception as e:
             logger.warning(f"Error scanning output files in {output_path}: {e}")
 
-        return sorted(files, key=lambda x: x.get("version", ""), reverse=True)
+        return sorted(files, key=lambda x: x.get("version") or "", reverse=True)
 
     def _extract_version(self, filename: str) -> Optional[str]:
         """Extract version number from filename."""
