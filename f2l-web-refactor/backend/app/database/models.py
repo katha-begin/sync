@@ -513,8 +513,8 @@ class ShotDownloadTask(Base):
     failed_items: Mapped[int] = mapped_column(Integer, default=0)
 
     # Size tracking
-    total_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
-    downloaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    total_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
+    downloaded_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
 
     # Timestamps
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
@@ -580,8 +580,8 @@ class ShotDownloadItem(Base):
 
     # Progress tracking
     file_count: Mapped[int] = mapped_column(Integer, default=0)
-    total_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
-    downloaded_size: Mapped[int] = mapped_column(Integer, default=0)  # bytes
+    total_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
+    downloaded_size: Mapped[int] = mapped_column(BigInteger, default=0)  # bytes
 
     # File Statistics (for conflict handling)
     files_skipped: Mapped[int] = mapped_column(Integer, default=0)
